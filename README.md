@@ -14,3 +14,4 @@ Sistem Manajemen Gym **BisaGym** terintegrasi Pengolahan Citra Digital dan AI Bi
 2. **Manual**:
    - Terminal 1: `php artisan face-api:serve`
    - Terminal 2: `php artisan serve --port=8000`
+
