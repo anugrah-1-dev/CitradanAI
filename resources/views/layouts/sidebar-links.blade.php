@@ -22,6 +22,21 @@
     {{ __('Scan Attendance') }}
 </x-nav-link>
 
+<x-nav-link :href="route('face-enrollment.index')" :active="request()->routeIs('face-enrollment.*')">
+    <i class="ph ph-scan-face text-xl mr-3"></i>
+    {{ __('Pendaftaran Wajah') }}
+</x-nav-link>
+
+<x-nav-link :href="route('streaming.index')" :active="request()->routeIs('streaming.*')">
+    <i class="ph ph-video-camera text-xl mr-3"></i>
+    {{ __('Streaming Kamera') }}
+</x-nav-link>
+
+<x-nav-link :href="route('devices.index')" :active="request()->routeIs('devices.*')">
+    <i class="ph ph-devices text-xl mr-3"></i>
+    {{ __('Perangkat') }}
+</x-nav-link>
+
 <x-nav-link :href="route('pos.index')" :active="request()->routeIs('pos.*')">
     <i class="ph ph-storefront text-xl mr-3"></i>
     {{ __('POS Snack') }}

@@ -5,3 +5,13 @@ gym.data_members.json
 
 # Test scripts
 test_*.php
+node_modules
+.env
+.phpunit.result.cache
+
+# Biometrics
+bisagym-api/.venv/
+bisagym-api/.env
+bisagym-api/.pytest_cache/
+bisagym-api/.ruff_cache/
+bisagym-api/__pycache__/

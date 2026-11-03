@@ -3,32 +3,117 @@
         {{ __('Scan Absensi Member') }}
     </x-slot>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Scan Box -->
+    <style>
+        .kiosk-video-stage {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background: #0f130e;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 2px solid #273024;
+        }
+        .kiosk-video-stage video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            display: block;
+        }
+        .kiosk-guide-frame {
+            position: absolute;
+            inset: 12% 20%;
+            border: 2px dashed rgba(224, 255, 0, 0.45);
+            border-radius: 50% 50% 45% 45%;
+            pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(10, 14, 9, 0.35);
+            transition: border-color 0.3s;
+        }
+        .kiosk-guide-frame.scanning {
+            border-color: #e0ff00;
+            box-shadow: 0 0 20px rgba(224, 255, 0, 0.4), 0 0 0 9999px rgba(10, 14, 9, 0.45);
+        }
+        .scan-laser-line {
+            position: absolute;
+            left: 15%;
+            right: 15%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #e0ff00, transparent);
+            box-shadow: 0 0 10px #e0ff00;
+            top: 20%;
+            animation: scanLaser 2s infinite ease-in-out;
+            pointer-events: none;
+        }
+        @keyframes scanLaser {
+            0% { top: 15%; opacity: 0.2; }
+            50% { top: 80%; opacity: 1; }
+            100% { top: 15%; opacity: 0.2; }
+        }
+        .kiosk-result-card {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.92); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        /* Fullscreen kiosk styling */
+        #fullscreenKiosk:fullscreen {
+            background: radial-gradient(circle at 50% 30%, #1c2619 0%, #0d120a 60%, #050704 100%);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            color: white;
+            overflow-y: auto;
+        }
+    </style>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" x-data="attendanceScanner()">
+        <!-- Scan / Kiosk Box -->
         <div class="lg:col-span-1">
             <div class="bg-card rounded-xl border border-gray-800 p-6 shadow-lg relative overflow-hidden">
-                <div class="absolute top-0 right-0 p-4 opacity-5">
-                    <i class="ph ph-barcode text-9xl text-neon"></i>
+                <!-- Mode Switcher Tabs -->
+                <div class="flex items-center justify-between mb-4 border-b border-gray-800 pb-3">
+                    <div class="flex space-x-2">
+                        <button type="button" @click="setMode('id')"
+                            :class="activeMode === 'id' ? 'bg-neon text-darker font-bold shadow-[0_0_12px_rgba(224,255,0,0.25)]' : 'bg-dark text-gray-400 hover:text-white border border-gray-700'"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center transition">
+                            <i class="ph ph-barcode text-base mr-1.5"></i>
+                            ID / Barcode
+                        </button>
+                        <button type="button" @click="setMode('face')"
+                            :class="activeMode === 'face' ? 'bg-neon text-darker font-bold shadow-[0_0_12px_rgba(224,255,0,0.25)]' : 'bg-dark text-gray-400 hover:text-white border border-gray-700'"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center transition relative">
+                            <i class="ph ph-scan-face text-base mr-1.5"></i>
+                            Kiosk Wajah
+                            @if($apiReady)
+                                <span class="w-2 h-2 rounded-full bg-green-400 ml-1.5 inline-block animate-pulse"></span>
+                            @endif
+                        </button>
+                    </div>
+
+                    <button type="button" @click="openFullscreen()" title="Buka Mode Kiosk Layar Penuh"
+                        class="p-1.5 rounded-lg bg-dark border border-gray-700 text-gray-400 hover:text-neon hover:border-neon transition">
+                        <i class="ph ph-arrows-out text-lg"></i>
+                    </button>
                 </div>
-                
-                <h3 class="text-white font-medium mb-4 border-b border-gray-800 pb-2 relative z-10">Scan E-Card / QR Code</h3>
-                
+
+                {{-- Alert Messages dari Form Biasa --}}
                 @if(session('success'))
-                    <div class="mb-4 p-4 rounded-lg bg-green-500/10 border border-green-500/50 text-green-400 text-sm flex items-start relative z-10">
+                    <div class="mb-4 p-4 rounded-lg bg-green-500/10 border border-green-500/50 text-green-400 text-sm flex items-start">
                         <i class="ph ph-check-circle text-xl mr-2 mt-0.5"></i>
                         <span>{{ session('success') }}</span>
                     </div>
                 @endif
                 
                 @if(session('error'))
-                    <div class="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/50 text-red-400 text-sm flex items-start relative z-10">
+                    <div class="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/50 text-red-400 text-sm flex items-start">
                         <i class="ph ph-warning-circle text-xl mr-2 mt-0.5"></i>
                         <span>{{ session('error') }}</span>
                     </div>
                 @endif
                 
                 @if(session('warning'))
-                    <div class="mb-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/50 text-yellow-400 text-sm flex items-start relative z-10">
+                    <div class="mb-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/50 text-yellow-400 text-sm flex items-start">
                         <i class="ph ph-info text-xl mr-2 mt-0.5"></i>
                         <span>{{ session('warning') }}</span>
                     </div>
@@ -54,7 +139,6 @@
                                 </div>
                                 <p class="text-xs text-gray-400 font-mono">{{ $sm['member_id'] }}</p>
 
-                                {{-- Remaining Days Highlight --}}
                                 <div class="mt-2 flex flex-wrap items-center gap-2">
                                     @if($sm['days_left'] > 7)
                                         <span class="px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-green-500/20 text-green-400 border border-green-500/40 flex items-center">
@@ -62,11 +146,11 @@
                                         </span>
                                     @elseif($sm['days_left'] >= 0)
                                         <span class="px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center animate-pulse">
-                                            <i class="ph ph-warning-circle mr-1.5 text-sm"></i> {{ $sm['days_left'] == 0 ? 'Hari Ini Terakhir!' : 'Segera Habis! Sisa ' . $sm['days_left'] . ' Hari' }}
+                                            <i class="ph ph-warning-circle mr-1.5 text-sm"></i> {{ $sm['days_left'] == 0 ? 'Hari Ini Terakhir!' : 'Sisa ' . $sm['days_left'] . ' Hari' }}
                                         </span>
                                     @else
                                         <span class="px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-red-500/20 text-red-400 border border-red-500/40 flex items-center">
-                                            <i class="ph ph-x-circle mr-1.5 text-sm"></i> Expired ({{ abs($sm['days_left']) }} hari lalu)
+                                            <i class="ph ph-x-circle mr-1.5 text-sm"></i> Expired
                                         </span>
                                     @endif
 
@@ -79,36 +163,122 @@
                     </div>
                 @endif
 
-                <form method="POST" action="{{ route('attendance.store') }}" class="relative z-10 space-y-4">
-                    @csrf
-                    <div>
-                        <label class="block text-sm font-medium text-gray-400 mb-2">Arahkan Scanner, ketik VIP ID, atau Nama Member</label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="ph ph-scan text-neon text-xl"></i>
+                <!-- MODE 1: Scan ID / Barcode Form -->
+                <div x-show="activeMode === 'id'" x-transition:enter="transition ease-out duration-200">
+                    <form method="POST" action="{{ route('attendance.store') }}" class="space-y-4">
+                        @csrf
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Arahkan Scanner, ketik VIP ID, atau Nama Member</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <i class="ph ph-scan text-neon text-xl"></i>
+                                </div>
+                                <input type="text" name="identifier" id="identifier" required autofocus autocomplete="off"
+                                    class="block w-full pl-10 pr-3 py-3 border border-neon rounded-lg bg-dark text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-neon focus:border-neon transition-colors text-lg font-mono shadow-[0_0_15px_rgba(224,255,0,0.1)]" 
+                                    placeholder="VIP-... atau Nama Member">
                             </div>
-                            <input type="text" name="identifier" id="identifier" required autofocus autocomplete="off"
-                                class="block w-full pl-10 pr-3 py-3 border border-neon rounded-lg bg-dark text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-neon focus:border-neon transition-colors text-lg font-mono shadow-[0_0_15px_rgba(224,255,0,0.1)]" 
-                                placeholder="VIP-... atau Nama Member">
+                        </div>
+                        
+                        <button type="submit" class="w-full bg-neon hover:bg-[#c4e600] text-darker font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2">
+                            <i class="ph ph-check-square-offset text-xl"></i>
+                            <span>Proses Absensi ID</span>
+                        </button>
+                    </form>
+                    
+                    <p class="text-xs text-gray-500 mt-4 text-center">
+                        Pastikan cursor berada di dalam kotak input saat melakukan scan QR Code / Barcode.
+                    </p>
+                </div>
+
+                <!-- MODE 2: Kiosk Wajah AI (Biometrik) -->
+                <div x-show="activeMode === 'face'" x-transition:enter="transition ease-out duration-200" style="display: none;">
+                    @if(! $apiReady)
+                        <div class="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs text-center mb-3">
+                            <i class="ph ph-warning text-2xl block mb-1"></i>
+                            <strong>Layanan Biometrik Belum Aktif</strong>
+                            <p class="text-gray-400 mt-1">Jalankan perintah <code>php artisan face-api:serve</code> di terminal untuk mengaktifkan scan wajah.</p>
+                        </div>
+                    @endif
+
+                    <!-- Stage Kamera Kiosk -->
+                    <div class="kiosk-video-stage mb-3">
+                        <video id="kioskVideo" autoplay muted playsinline></video>
+                        <div class="kiosk-guide-frame" :class="scanning ? 'scanning' : ''"></div>
+                        <div class="scan-laser-line" x-show="scanning" style="display: none;"></div>
+
+                        <!-- Badge Status -->
+                        <div class="absolute top-2.5 left-2.5 flex items-center space-x-1.5 bg-black/70 border border-gray-700/60 rounded-md px-2 py-1 text-[11px] text-gray-300 font-mono">
+                            <span class="w-2 h-2 rounded-full" :class="cameraReady ? 'bg-green-400' : 'bg-red-400'"></span>
+                            <span x-text="cameraReady ? 'Kamera Siap' : 'Menyiapkan Kamera...'"></span>
+                        </div>
+
+                        <!-- Indicator Scanning -->
+                        <div class="absolute bottom-2.5 right-2.5 flex items-center space-x-1.5 bg-black/75 rounded-md px-2.5 py-1 text-xs text-neon font-bold" x-show="scanning" style="display: none;">
+                            <i class="ph ph-spinner animate-spin text-sm"></i>
+                            <span>Memproses Wajah...</span>
                         </div>
                     </div>
-                    
-                    <button type="submit" class="w-full bg-neon hover:bg-[#c4e600] text-darker font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2">
-                        <i class="ph ph-check-square-offset text-xl"></i>
-                        <span>Proses Absensi</span>
-                    </button>
-                </form>
-                
-                <p class="text-xs text-gray-500 mt-4 text-center relative z-10">
-                    Pastikan cursor berada di dalam kotak input saat melakukan scan QR Code. Scanner otomatis akan memproses data.
-                </p>
+
+                    <!-- Kiosk Action Controls -->
+                    <div class="space-y-2">
+                        <button type="button" @click="triggerFaceCheckin()" :disabled="scanning || !cameraReady"
+                            class="w-full bg-neon hover:bg-[#c4e600] disabled:opacity-50 text-darker font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2 shadow-[0_0_15px_rgba(224,255,0,0.15)]">
+                            <i class="ph ph-scan text-xl"></i>
+                            <span x-text="scanning ? 'Sedang Memverifikasi...' : 'Mulai Check-in Wajah'"></span>
+                        </button>
+
+                        <div class="flex items-center justify-between text-xs text-gray-400 pt-1">
+                            <label class="flex items-center space-x-2 cursor-pointer select-none">
+                                <input type="checkbox" x-model="autoScan" class="rounded bg-dark border-gray-700 text-neon focus:ring-neon">
+                                <span>Auto Scan Berkelanjutan</span>
+                            </label>
+
+                            <button type="button" @click="openFullscreen()" class="text-neon hover:underline flex items-center">
+                                <i class="ph ph-arrows-out mr-1"></i> Mode Layar Penuh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Kiosk Result Feedback (Modal/Card Popup) -->
+                    <template x-if="kioskResult">
+                        <div class="kiosk-result-card mt-4 p-4 rounded-xl border relative overflow-hidden"
+                            :class="kioskResult.decision === 'ALLOW' ? 'bg-green-500/10 border-green-500 text-green-300 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'bg-red-500/10 border-red-500 text-red-300 shadow-[0_0_20px_rgba(239,68,68,0.2)]'">
+                            <div class="flex items-start space-x-3">
+                                <div class="shrink-0 text-3xl mt-0.5">
+                                    <i :class="kioskResult.decision === 'ALLOW' ? 'ph ph-check-circle text-green-400' : 'ph ph-x-circle text-red-400'"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <span class="text-[10px] font-mono uppercase tracking-wider font-bold block"
+                                        :class="kioskResult.decision === 'ALLOW' ? 'text-green-400' : 'text-red-400'"
+                                        x-text="kioskResult.decision === 'ALLOW' ? 'VERIFIKASI BERHASIL' : 'AKSES DITOLAK'"></span>
+                                    <h4 class="text-base font-bold text-white mt-0.5" x-text="kioskResult.title"></h4>
+                                    
+                                    <template x-if="kioskResult.member">
+                                        <div class="mt-2 p-2.5 rounded-lg bg-black/40 border border-gray-800">
+                                            <p class="text-sm font-bold text-white" x-text="kioskResult.member.name"></p>
+                                            <p class="text-xs text-gray-400 font-mono" x-text="kioskResult.member.member_id"></p>
+                                            <template x-if="kioskResult.member.days_left !== undefined">
+                                                <p class="text-xs font-semibold mt-1"
+                                                    :class="kioskResult.member.days_left > 7 ? 'text-green-400' : (kioskResult.member.days_left >= 0 ? 'text-amber-400' : 'text-red-400')">
+                                                    Sisa Masa Aktif: <span x-text="kioskResult.member.days_left"></span> Hari
+                                                </p>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    <p class="text-xs mt-2" x-text="kioskResult.message"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
             
             <!-- Attendance Stats -->
             <div class="mt-6 grid grid-cols-2 gap-4">
                 <div class="bg-card rounded-xl border border-gray-800 p-4 shadow-lg text-center">
                     <p class="text-xs text-gray-400 mb-1">Total Hadir <br>(Tanggal Terpilih)</p>
-                    <p class="text-2xl font-bold text-neon">{{ $totalSelectedDate }}</p>
+                    <p class="text-2xl font-bold text-neon" id="statTotalSelected" x-text="totalSelectedDate">{{ $totalSelectedDate }}</p>
                 </div>
                 <div class="bg-card rounded-xl border border-gray-800 p-4 shadow-lg text-center">
                     <p class="text-xs text-gray-400 mb-1">Rata-rata <br>Harian (Total)</p>
@@ -129,7 +299,10 @@
         <div class="lg:col-span-2">
             <div class="bg-card rounded-xl border border-gray-800 shadow-lg overflow-hidden flex flex-col h-full">
                 <div class="p-6 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <h3 class="text-white font-medium">Log Kehadiran</h3>
+                    <div class="flex items-center space-x-2">
+                        <i class="ph ph-clock-counter-clockwise text-neon text-xl"></i>
+                        <h3 class="text-white font-medium">Log Kehadiran Member</h3>
+                    </div>
                     
                     <form method="GET" action="{{ route('attendance.index') }}" class="flex items-center gap-2">
                         <label for="date" class="text-sm text-gray-400">Tanggal:</label>
@@ -144,10 +317,10 @@
                                 <th class="px-6 py-4 font-medium">Waktu</th>
                                 <th class="px-6 py-4 font-medium">Member</th>
                                 <th class="px-6 py-4 font-medium">Sisa Masa Aktif</th>
-                                <th class="px-6 py-4 font-medium">Petugas Jaga</th>
+                                <th class="px-6 py-4 font-medium">Petugas / Metode</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-800 text-sm">
+                        <tbody id="attendanceTableBody" class="divide-y divide-gray-800 text-sm">
                             @forelse ($attendances as $att)
                                 @php
                                     $today = \Carbon\Carbon::today();
@@ -156,7 +329,7 @@
                                 @endphp
                                 <tr class="hover:bg-dark/50 transition-colors">
                                     <td class="px-6 py-4">
-                                        <span class="font-mono text-neon">{{ \Carbon\Carbon::parse($att->attendance_time)->format('H:i') }}</span>
+                                        <span class="font-mono text-neon font-bold">{{ \Carbon\Carbon::parse($att->attendance_time)->format('H:i') }}</span>
                                     </td>
                                     <td class="px-6 py-4">
                                         <p class="font-medium text-white">{{ $att->member->name }}</p>
@@ -178,11 +351,11 @@
                                         @endif
                                     </td>
                                     <td class="px-6 py-4 text-gray-400 text-xs">
-                                        <i class="ph ph-user-circle mr-1"></i> {{ $att->user->name ?? 'Sistem' }}
+                                        <i class="ph ph-user-circle mr-1"></i> {{ $att->user->name ?? 'Kiosk Biometrik' }}
                                     </td>
                                 </tr>
                             @empty
-                                <tr>
+                                <tr id="emptyAttendanceRow">
                                     <td colspan="4" class="px-6 py-12 text-center text-gray-500">
                                         <i class="ph ph-clock text-4xl mb-2 block text-gray-600"></i>
                                         Belum ada member yang absen hari ini.
@@ -194,18 +367,340 @@
                 </div>
             </div>
         </div>
+
+        <!-- Fullscreen Kiosk Overlay Modal -->
+        <div id="fullscreenKiosk" x-show="isFullscreen" style="display: none;"
+            class="fixed inset-0 z-50 bg-[#0d120a] flex flex-col p-6 sm:p-10 justify-between">
+            <header class="flex items-center justify-between border-b border-gray-800 pb-4">
+                <div class="flex items-center space-x-3">
+                    <img src="{{ asset('asset/logo_gym.jpg') }}" alt="Logo" class="w-10 h-10 rounded-full border border-neon">
+                    <div>
+                        <span class="text-xl font-black text-white tracking-wider">BISA<span class="text-neon">GYM</span></span>
+                        <p class="text-xs text-gray-400 font-mono">KIOSK CHECK-IN MANDIRI</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-6">
+                    <div class="text-right">
+                        <span id="fullscreenClock" class="text-2xl font-mono font-bold text-neon"></span>
+                        <p class="text-xs text-gray-400">Pintu Masuk Utama</p>
+                    </div>
+                    <button type="button" @click="closeFullscreen()" class="p-2 rounded-lg bg-dark border border-gray-700 text-gray-400 hover:text-white">
+                        <i class="ph ph-x text-2xl"></i>
+                    </button>
+                </div>
+            </header>
+
+            <main class="flex-1 flex flex-col lg:flex-row items-center justify-center gap-10 py-6 max-w-5xl mx-auto w-full">
+                <!-- Video Stage -->
+                <div class="w-full max-w-md">
+                    <div class="kiosk-video-stage shadow-[0_0_40px_rgba(0,0,0,0.8)]" style="aspect-ratio: 1/1;">
+                        <video id="fullscreenVideo" autoplay muted playsinline></video>
+                        <div class="kiosk-guide-frame" :class="scanning ? 'scanning' : ''"></div>
+                        <div class="scan-laser-line" x-show="scanning"></div>
+                    </div>
+                    
+                    <button type="button" @click="triggerFaceCheckin()" :disabled="scanning"
+                        class="w-full mt-4 bg-neon hover:bg-[#c4e600] text-darker font-black text-lg py-4 rounded-xl transition shadow-[0_0_25px_rgba(224,255,0,0.3)] flex items-center justify-center space-x-2">
+                        <i class="ph ph-scan text-2xl"></i>
+                        <span x-text="scanning ? 'MEMPROSES WAJAH...' : 'MULAI CHECK-IN SEKARANG'"></span>
+                    </button>
+                </div>
+
+                <!-- Info / Feedback Side -->
+                <div class="flex-1 max-w-md w-full">
+                    <template x-if="!kioskResult">
+                        <div class="text-center lg:text-left space-y-4">
+                            <span class="text-neon text-xs font-mono font-bold uppercase tracking-widest">PANDUAN AKSES</span>
+                            <h2 class="text-3xl font-extrabold text-white">Silakan Berdiri & Hadap Kamera</h2>
+                            <p class="text-gray-400 text-sm leading-relaxed">
+                                Posisikan wajah Anda tepat di dalam bingkai oval hijau. Pastikan pencahayaan cukup dan hanya satu orang di depan kamera.
+                            </p>
+                            <div class="pt-4 border-t border-gray-800 flex gap-4 text-xs text-gray-400 font-mono">
+                                <div><i class="ph ph-check text-neon mr-1"></i> 1. Lepas Helm/Masker</div>
+                                <div><i class="ph ph-check text-neon mr-1"></i> 2. Lihat Lurus</div>
+                                <div><i class="ph ph-check text-neon mr-1"></i> 3. Tunggu Bunyi Beep</div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template x-if="kioskResult">
+                        <div class="p-6 rounded-2xl border text-center space-y-4 kiosk-result-card"
+                            :class="kioskResult.decision === 'ALLOW' ? 'bg-green-500/10 border-green-500 shadow-[0_0_40px_rgba(34,197,94,0.25)]' : 'bg-red-500/10 border-red-500 shadow-[0_0_40px_rgba(239,68,68,0.25)]'">
+                            <div class="w-20 h-20 mx-auto rounded-full flex items-center justify-center text-5xl"
+                                :class="kioskResult.decision === 'ALLOW' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'">
+                                <i :class="kioskResult.decision === 'ALLOW' ? 'ph ph-check-circle' : 'ph ph-x-circle'"></i>
+                            </div>
+
+                            <div>
+                                <span class="text-xs font-mono uppercase tracking-widest font-bold"
+                                    :class="kioskResult.decision === 'ALLOW' ? 'text-green-400' : 'text-red-400'"
+                                    x-text="kioskResult.decision === 'ALLOW' ? 'AKSES DIIZINKAN' : 'AKSES BELUM DAPAT DIBERIKAN'"></span>
+                                <h3 class="text-2xl font-black text-white mt-1" x-text="kioskResult.title"></h3>
+                            </div>
+
+                            <template x-if="kioskResult.member">
+                                <div class="bg-black/50 p-4 rounded-xl border border-gray-800">
+                                    <p class="text-xl font-extrabold text-white" x-text="kioskResult.member.name"></p>
+                                    <p class="text-sm text-neon font-mono mt-0.5" x-text="kioskResult.member.member_id"></p>
+                                    <template x-if="kioskResult.member.days_left !== undefined">
+                                        <p class="text-sm font-bold mt-2"
+                                            :class="kioskResult.member.days_left > 7 ? 'text-green-400' : (kioskResult.member.days_left >= 0 ? 'text-amber-400' : 'text-red-400')">
+                                            Sisa Keanggotaan: <span x-text="kioskResult.member.days_left"></span> Hari
+                                        </p>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <p class="text-sm text-gray-300" x-text="kioskResult.message"></p>
+                        </div>
+                    </template>
+                </div>
+            </main>
+
+            <footer class="border-t border-gray-800 pt-4 text-center text-xs text-gray-500">
+                Butuh bantuan? Silakan hubungi resepsionis / kasir di sebelah kanan pintu masuk.
+            </footer>
+        </div>
     </div>
 
     @push('scripts')
     <script>
+        function attendanceScanner() {
+            return {
+                activeMode: 'id',
+                cameraReady: false,
+                scanning: false,
+                autoScan: false,
+                autoScanTimer: null,
+                stream: null,
+                kioskResult: null,
+                resultTimeout: null,
+                totalSelectedDate: {{ $totalSelectedDate }},
+                isFullscreen: false,
+
+                init() {
+                    // Clock for fullscreen
+                    setInterval(() => {
+                        const now = new Date();
+                        const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        const el = document.getElementById('fullscreenClock');
+                        if (el) el.textContent = timeStr;
+                    }, 1000);
+                },
+
+                setMode(mode) {
+                    this.activeMode = mode;
+                    if (mode === 'face') {
+                        this.$nextTick(() => this.startCamera('kioskVideo'));
+                    } else {
+                        this.stopCamera();
+                        this.$nextTick(() => {
+                            const input = document.getElementById('identifier');
+                            if (input) input.focus();
+                        });
+                    }
+                },
+
+                async startCamera(videoElementId) {
+                    if (this.stream) return;
+                    try {
+                        this.stream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                width: { ideal: 640 },
+                                height: { ideal: 480 },
+                                facingMode: 'user'
+                            },
+                            audio: false
+                        });
+
+                        const video = document.getElementById(videoElementId);
+                        if (video) {
+                            video.srcObject = this.stream;
+                            video.onloadedmetadata = () => {
+                                video.play();
+                                this.cameraReady = true;
+                            };
+                        }
+                    } catch (err) {
+                        console.error('Kamera gagal dibuka:', err);
+                        this.cameraReady = false;
+                        alert('Tidak dapat mengakses kamera. Pastikan izin kamera browser sudah diberikan.');
+                    }
+                },
+
+                stopCamera() {
+                    if (this.autoScanTimer) clearInterval(this.autoScanTimer);
+                    if (this.stream) {
+                        this.stream.getTracks().forEach(track => track.stop());
+                        this.stream = null;
+                    }
+                    this.cameraReady = false;
+                },
+
+                async triggerFaceCheckin() {
+                    if (this.scanning) return;
+                    this.scanning = true;
+
+                    const video = this.isFullscreen ? document.getElementById('fullscreenVideo') : document.getElementById('kioskVideo');
+                    if (!video || !this.cameraReady) {
+                        this.scanning = false;
+                        return;
+                    }
+
+                    // Capture frame via canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    canvas.toBlob(async (blob) => {
+                        if (!blob) {
+                            this.scanning = false;
+                            return;
+                        }
+
+                        const formData = new FormData();
+                        formData.append('frame', blob, 'checkin.jpg');
+
+                        try {
+                            const res = await fetch('{{ route("attendance.face-checkin") }}', {
+                                method: 'POST',
+                                headers: {
+                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                                    'Accept': 'application/json'
+                                },
+                                body: formData
+                            });
+
+                            const data = await res.json();
+                            this.handleCheckinResult(data);
+                        } catch (err) {
+                            console.error('Checkin error:', err);
+                            this.handleCheckinResult({
+                                decision: 'DENY',
+                                title: 'Kesalahan Jaringan',
+                                message: 'Tidak dapat menghubungi server. Coba lagi beberapa saat.'
+                            });
+                        } finally {
+                            this.scanning = false;
+                        }
+                    }, 'image/jpeg', 0.88);
+                },
+
+                handleCheckinResult(data) {
+                    this.kioskResult = data;
+                    clearTimeout(this.resultTimeout);
+
+                    // Sound effect
+                    this.playAudioFeedback(data.decision === 'ALLOW');
+
+                    // If ALLOW: prepend to table dynamically!
+                    if (data.decision === 'ALLOW' && data.member) {
+                        this.totalSelectedDate++;
+                        this.prependAttendanceRow(data.member);
+                    }
+
+                    // Auto dismiss result after 4 seconds
+                    this.resultTimeout = setTimeout(() => {
+                        this.kioskResult = null;
+                        if (this.autoScan && this.activeMode === 'face') {
+                            this.triggerFaceCheckin();
+                        }
+                    }, 4000);
+                },
+
+                prependAttendanceRow(member) {
+                    const tbody = document.getElementById('attendanceTableBody');
+                    const emptyRow = document.getElementById('emptyAttendanceRow');
+                    if (emptyRow) emptyRow.remove();
+
+                    if (!tbody) return;
+
+                    const daysLeft = member.days_left;
+                    let badgeHtml = '';
+                    if (daysLeft > 7) {
+                        badgeHtml = `<span class="px-2.5 py-1 text-xs rounded-md bg-green-500/10 text-green-400 border border-green-500/30 font-mono font-medium inline-flex items-center"><i class="ph ph-hourglass-high mr-1 text-sm"></i> ${daysLeft} Hari Lagi</span>`;
+                    } else if (daysLeft >= 0) {
+                        badgeHtml = `<span class="px-2.5 py-1 text-xs rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 font-mono font-medium inline-flex items-center"><i class="ph ph-warning-circle mr-1 text-sm"></i> Sisa ${daysLeft} Hari</span>`;
+                    } else {
+                        badgeHtml = `<span class="px-2.5 py-1 text-xs rounded-md bg-red-500/10 text-red-400 border border-red-500/30 font-mono font-medium inline-flex items-center"><i class="ph ph-x-circle mr-1 text-sm"></i> Expired</span>`;
+                    }
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-dark/50 transition-colors bg-green-500/5 animate-pulse';
+                    tr.innerHTML = `
+                        <td class="px-6 py-4"><span class="font-mono text-neon font-bold">${member.attendance_time || 'Baru Saja'}</span></td>
+                        <td class="px-6 py-4"><p class="font-medium text-white">${member.name}</p><p class="text-xs text-gray-500 font-mono">${member.member_id}</p></td>
+                        <td class="px-6 py-4">${badgeHtml}</td>
+                        <td class="px-6 py-4 text-gray-400 text-xs"><i class="ph ph-scan-face text-neon mr-1"></i> Kiosk Wajah AI</td>
+                    `;
+                    tbody.prepend(tr);
+                },
+
+                playAudioFeedback(isSuccess) {
+                    try {
+                        const AudioContext = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioContext) return;
+                        const ctx = new AudioContext();
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+
+                        if (isSuccess) {
+                            // Pleasant major 3rd beep
+                            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+                            osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.12); // A5
+                            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+                            osc.start();
+                            osc.stop(ctx.currentTime + 0.35);
+                        } else {
+                            // Low buzz
+                            osc.type = 'sawtooth';
+                            osc.frequency.setValueAtTime(160, ctx.currentTime);
+                            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                            osc.start();
+                            osc.stop(ctx.currentTime + 0.3);
+                        }
+                    } catch (e) {
+                        // ignore audio context restrictions
+                    }
+                },
+
+                openFullscreen() {
+                    const el = document.getElementById('fullscreenKiosk');
+                    if (el) {
+                        this.isFullscreen = true;
+                        this.setMode('face');
+                        this.$nextTick(() => {
+                            if (el.requestFullscreen) {
+                                el.requestFullscreen().catch(() => {});
+                            }
+                            this.startCamera('fullscreenVideo');
+                        });
+                    }
+                },
+
+                closeFullscreen() {
+                    this.isFullscreen = false;
+                    if (document.fullscreenElement && document.exitFullscreen) {
+                        document.exitFullscreen().catch(() => {});
+                    }
+                    this.setMode('face');
+                    this.$nextTick(() => this.startCamera('kioskVideo'));
+                }
+            };
+        }
+
         document.addEventListener('alpine:init', () => {
-            // Extra safety measure for scanners that don't send Enter automatically
-            // Standard barcode scanners send Enter at the end, which triggers standard form submit.
-            // If they don't, this snippet submits if length matches standard VIP ID length.
             const input = document.getElementById('identifier');
-            if(input) {
+            if (input) {
                 input.addEventListener('input', function() {
-                    if (this.value.startsWith('VIP-') && this.value.length >= 24) { // Length of VIP-YYYYMMDD-HHMMSS-XXXX
+                    if (this.value.startsWith('VIP-') && this.value.length >= 24) {
                         this.form.submit();
                     }
                 });

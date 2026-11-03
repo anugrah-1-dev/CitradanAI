@@ -8,6 +8,13 @@ class Member extends Model
 {
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return [
+            'face_enrolled_at' => 'datetime',
+        ];
+    }
+
     public function transactions()
     {
         return $this->hasMany(MemberTransaction::class);

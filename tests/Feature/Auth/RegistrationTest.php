@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -27,5 +28,27 @@ class RegistrationTest extends TestCase
 
         $this->assertAuthenticated();
         $response->assertRedirect(route('dashboard', absolute: false));
+        $this->assertDatabaseHas('users', [
+            'email' => 'test@example.com',
+            'username' => 'test-user',
+        ]);
+    }
+
+    public function test_registration_generates_a_unique_username_when_name_is_taken(): void
+    {
+        User::factory()->create(['username' => 'test-user']);
+
+        $response = $this->post('/register', [
+            'name' => 'Test User',
+            'email' => 'another@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ]);
+
+        $response->assertRedirect(route('dashboard', absolute: false));
+        $this->assertDatabaseHas('users', [
+            'email' => 'another@example.com',
+            'username' => 'test-user-1',
+        ]);
     }
 }

@@ -40,6 +40,24 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
     Route::post('/attendance', [\App\Http\Controllers\AttendanceController::class, 'store'])->name('attendance.store');
+    Route::post('/attendance/face-checkin', [\App\Http\Controllers\AttendanceController::class, 'faceCheckin'])->name('attendance.face-checkin');
+
+    Route::get('/face-enrollment', [\App\Http\Controllers\FaceEnrollmentController::class, 'index'])->name('face-enrollment.index');
+    Route::post('/face-enrollment/{member}/start', [\App\Http\Controllers\FaceEnrollmentController::class, 'start'])->name('face-enrollment.start');
+    Route::post('/face-enrollment/{member}/samples', [\App\Http\Controllers\FaceEnrollmentController::class, 'sample'])->name('face-enrollment.sample');
+    Route::post('/face-enrollment/{member}/complete', [\App\Http\Controllers\FaceEnrollmentController::class, 'complete'])->name('face-enrollment.complete');
+    Route::post('/face-enrollment/{member}/revoke', [\App\Http\Controllers\FaceEnrollmentController::class, 'revoke'])->name('face-enrollment.revoke');
+
+    // Streaming Kamera (semua role)
+    Route::get('/streaming', [\App\Http\Controllers\StreamingCameraController::class, 'index'])->name('streaming.index');
+    Route::post('/streaming/analyze', [\App\Http\Controllers\StreamingCameraController::class, 'analyze'])->name('streaming.analyze');
+
+    // Perangkat / Devices (semua role)
+    Route::get('/devices', [\App\Http\Controllers\DeviceController::class, 'index'])->name('devices.index');
+    Route::get('/devices/refresh', [\App\Http\Controllers\DeviceController::class, 'refresh'])->name('devices.refresh');
+    Route::post('/devices', [\App\Http\Controllers\DeviceController::class, 'store'])->name('devices.store');
+    Route::patch('/devices/{deviceId}/toggle', [\App\Http\Controllers\DeviceController::class, 'toggle'])->name('devices.toggle');
+    Route::post('/devices/{deviceId}/rotate-credential', [\App\Http\Controllers\DeviceController::class, 'rotateCredential'])->name('devices.rotate-credential');
 
     Route::get('/pos', [\App\Http\Controllers\PosController::class, 'index'])->name('pos.index');
     Route::post('/pos/checkout', [\App\Http\Controllers\PosController::class, 'checkout'])->name('pos.checkout');

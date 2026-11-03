@@ -61,35 +61,39 @@ class DashboardController extends Controller
             ->get();
 
         // Data Grafik: Kehadiran Member per Bulan (Tahun Ini)
+        $isSqlite = DB::getDriverName() === 'sqlite';
+        $monthAttSql = $isSqlite ? "CAST(strftime('%m', attendance_time) AS INTEGER)" : 'MONTH(attendance_time)';
+        $monthTxSql = $isSqlite ? "CAST(strftime('%m', transaction_date) AS INTEGER)" : 'MONTH(transaction_date)';
+
         $attendanceMonthly = MemberAttendance::select(
-                DB::raw('MONTH(attendance_time) as month'),
+                DB::raw("{$monthAttSql} as month"),
                 DB::raw('COUNT(*) as total')
             )
             ->whereYear('attendance_time', $thisYear)
-            ->groupBy(DB::raw('MONTH(attendance_time)'))
+            ->groupBy(DB::raw($monthAttSql))
             ->pluck('total', 'month')
             ->toArray();
 
         // Data Grafik: Member Baru vs Perpanjang per Bulan (Tahun Ini)
         $newMembersMonthly = MemberTransaction::select(
-                DB::raw('MONTH(transaction_date) as month'),
+                DB::raw("{$monthTxSql} as month"),
                 DB::raw('COUNT(*) as total')
             )
             ->whereYear('transaction_date', $thisYear)
             ->where('transaction_type', 'new')
             ->where('payment_status', 'paid')
-            ->groupBy(DB::raw('MONTH(transaction_date)'))
+            ->groupBy(DB::raw($monthTxSql))
             ->pluck('total', 'month')
             ->toArray();
 
         $renewalMembersMonthly = MemberTransaction::select(
-                DB::raw('MONTH(transaction_date) as month'),
+                DB::raw("{$monthTxSql} as month"),
                 DB::raw('COUNT(*) as total')
             )
             ->whereYear('transaction_date', $thisYear)
             ->where('transaction_type', 'renewal')
             ->where('payment_status', 'paid')
-            ->groupBy(DB::raw('MONTH(transaction_date)'))
+            ->groupBy(DB::raw($monthTxSql))
             ->pluck('total', 'month')
             ->toArray();
 
