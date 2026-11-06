@@ -74,6 +74,7 @@ class ServeFaceApiCommand extends Command
         }
 
         $process = new Process($command, $baseDir, [
+            'APP_ENV' => 'development',
             'DATABASE_URL' => 'sqlite:///./gym.db',
         ], null, null);
 
@@ -86,4 +87,3 @@ class ServeFaceApiCommand extends Command
         return $process->getExitCode() ?? Command::SUCCESS;
     }
 }
-

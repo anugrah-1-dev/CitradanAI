@@ -227,6 +227,13 @@
                             <span x-text="scanning ? 'Sedang Memverifikasi...' : 'Mulai Check-in Wajah'"></span>
                         </button>
 
+                        <button type="button" @click="connectBuzzer()" :disabled="buzzerConnecting || buzzerConnected"
+                            class="w-full bg-dark hover:bg-gray-800 disabled:opacity-50 text-gray-200 font-semibold py-2.5 px-4 rounded-lg border border-gray-700 transition-colors flex items-center justify-center space-x-2">
+                            <i class="ph ph-speaker-high text-lg"></i>
+                            <span x-text="buzzerConnecting ? 'Menyambungkan ESP32...' : (buzzerConnected ? 'ESP32 Terhubung' : 'Sambungkan Buzzer ESP32')"></span>
+                        </button>
+                        <p class="text-xs text-gray-400 text-center" role="status" x-text="buzzerStatus"></p>
+
                         <div class="flex items-center justify-between text-xs text-gray-400 pt-1">
                             <label class="flex items-center space-x-2 cursor-pointer select-none">
                                 <input type="checkbox" x-model="autoScan" class="rounded bg-dark border-gray-700 text-neon focus:ring-neon">
@@ -405,6 +412,12 @@
                         <i class="ph ph-scan text-2xl"></i>
                         <span x-text="scanning ? 'MEMPROSES WAJAH...' : 'MULAI CHECK-IN SEKARANG'"></span>
                     </button>
+                    <button type="button" @click="connectBuzzer()" :disabled="buzzerConnecting || buzzerConnected"
+                        class="w-full mt-2 bg-dark hover:bg-gray-800 disabled:opacity-50 text-gray-200 font-semibold py-3 px-4 rounded-xl border border-gray-700 transition-colors flex items-center justify-center space-x-2">
+                        <i class="ph ph-speaker-high text-lg"></i>
+                        <span x-text="buzzerConnecting ? 'Menyambungkan ESP32...' : (buzzerConnected ? 'ESP32 Terhubung' : 'Sambungkan Buzzer ESP32')"></span>
+                    </button>
+                    <p class="text-xs text-gray-400 text-center mt-2" role="status" x-text="buzzerStatus"></p>
                 </div>
 
                 <!-- Info / Feedback Side -->
@@ -478,6 +491,11 @@
                 resultTimeout: null,
                 totalSelectedDate: {{ $totalSelectedDate }},
                 isFullscreen: false,
+                serialPort: null,
+                serialWriter: null,
+                buzzerConnecting: false,
+                buzzerConnected: false,
+                buzzerStatus: 'Buzzer belum tersambung.',
 
                 init() {
                     // Clock for fullscreen
@@ -526,6 +544,72 @@
                         console.error('Kamera gagal dibuka:', err);
                         this.cameraReady = false;
                         alert('Tidak dapat mengakses kamera. Pastikan izin kamera browser sudah diberikan.');
+                    }
+                },
+
+                async connectBuzzer() {
+                    if (!('serial' in navigator)) {
+                        this.buzzerStatus = 'Web Serial tidak tersedia. Gunakan Chrome/Edge di localhost atau HTTPS.';
+                        return;
+                    }
+
+                    this.buzzerConnecting = true;
+                    try {
+                        this.serialPort = await navigator.serial.requestPort();
+                        await this.serialPort.open({ baudRate: 115200 });
+                        if (!this.serialPort.writable) {
+                            throw new Error('Port serial ESP32 tidak dapat ditulis.');
+                        }
+
+                        this.serialWriter = this.serialPort.writable.getWriter();
+                        this.buzzerConnected = true;
+                        this.buzzerStatus = 'ESP32 terhubung. Alarm aktif untuk wajah tak dikenal.';
+                        await this.sendBuzzerCommand('OFF');
+                    } catch (error) {
+                        console.error('Koneksi buzzer ESP32 gagal:', error);
+                        this.buzzerConnected = false;
+                        this.buzzerStatus = `Koneksi buzzer gagal: ${error.message || 'Periksa port dan kabel USB.'}`;
+                        if (this.serialWriter) {
+                            this.serialWriter.releaseLock();
+                            this.serialWriter = null;
+                        }
+                        if (this.serialPort) {
+                            try {
+                                await this.serialPort.close();
+                            } catch (closeError) {
+                                console.error('Port serial tidak dapat ditutup:', closeError);
+                            }
+                        }
+                        this.serialPort = null;
+                    } finally {
+                        this.buzzerConnecting = false;
+                    }
+                },
+
+                async sendBuzzerCommand(command) {
+                    if (!this.serialWriter) {
+                        if (command === 'UNKNOWN') {
+                            this.buzzerStatus = 'Wajah tak dikenal terdeteksi, tetapi ESP32 belum tersambung.';
+                        }
+                        return;
+                    }
+
+                    try {
+                        await this.serialWriter.write(new TextEncoder().encode(`${command}\n`));
+                    } catch (error) {
+                        console.error('Pengiriman perintah buzzer gagal:', error);
+                        this.buzzerConnected = false;
+                        this.buzzerStatus = 'Koneksi ESP32 terputus. Sambungkan kembali buzzer.';
+                        this.serialWriter.releaseLock();
+                        this.serialWriter = null;
+                        if (this.serialPort) {
+                            try {
+                                await this.serialPort.close();
+                            } catch (closeError) {
+                                console.error('Port serial terputus dan tidak dapat ditutup:', closeError);
+                            }
+                            this.serialPort = null;
+                        }
                     }
                 },
 
@@ -589,9 +673,11 @@
                     }, 'image/jpeg', 0.88);
                 },
 
-                handleCheckinResult(data) {
+                async handleCheckinResult(data) {
                     this.kioskResult = data;
                     clearTimeout(this.resultTimeout);
+
+                    await this.sendBuzzerCommand(data.code === 'IDENTITY_NOT_FOUND' ? 'UNKNOWN' : 'OFF');
 
                     // Sound effect
                     this.playAudioFeedback(data.decision === 'ALLOW');
