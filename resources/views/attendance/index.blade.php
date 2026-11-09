@@ -232,6 +232,10 @@
                             <i class="ph ph-speaker-high text-lg"></i>
                             <span x-text="buzzerConnecting ? 'Menyambungkan ESP32...' : (buzzerConnected ? 'ESP32 Terhubung' : 'Sambungkan Buzzer ESP32')"></span>
                         </button>
+                        <button type="button" @click="testBuzzer()" :disabled="!buzzerConnected"
+                            class="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 font-semibold py-2.5 px-4 rounded-lg border border-gray-700 transition-colors">
+                            Tes Buzzer ESP32
+                        </button>
                         <p class="text-xs text-gray-400 text-center" role="status" x-text="buzzerStatus"></p>
 
                         <div class="flex items-center justify-between text-xs text-gray-400 pt-1">
@@ -417,6 +421,10 @@
                         <i class="ph ph-speaker-high text-lg"></i>
                         <span x-text="buzzerConnecting ? 'Menyambungkan ESP32...' : (buzzerConnected ? 'ESP32 Terhubung' : 'Sambungkan Buzzer ESP32')"></span>
                     </button>
+                    <button type="button" @click="testBuzzer()" :disabled="!buzzerConnected"
+                        class="w-full mt-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 font-semibold py-3 px-4 rounded-xl border border-gray-700 transition-colors">
+                        Tes Buzzer ESP32
+                    </button>
                     <p class="text-xs text-gray-400 text-center mt-2" role="status" x-text="buzzerStatus"></p>
                 </div>
 
@@ -493,6 +501,7 @@
                 isFullscreen: false,
                 serialPort: null,
                 serialWriter: null,
+                serialReader: null,
                 buzzerConnecting: false,
                 buzzerConnected: false,
                 buzzerStatus: 'Buzzer belum tersambung.',
@@ -510,7 +519,8 @@
                 setMode(mode) {
                     this.activeMode = mode;
                     if (mode === 'face') {
-                        this.$nextTick(() => this.startCamera('kioskVideo'));
+                        const videoId = this.isFullscreen ? 'fullscreenVideo' : 'kioskVideo';
+                        this.$nextTick(() => this.startCamera(videoId));
                     } else {
                         this.stopCamera();
                         this.$nextTick(() => {
@@ -521,25 +531,33 @@
                 },
 
                 async startCamera(videoElementId) {
-                    if (this.stream) return;
                     try {
-                        this.stream = await navigator.mediaDevices.getUserMedia({
-                            video: {
-                                width: { ideal: 640 },
-                                height: { ideal: 480 },
-                                facingMode: 'user'
-                            },
-                            audio: false
-                        });
+                        if (!this.stream) {
+                            const requestedStream = await navigator.mediaDevices.getUserMedia({
+                                video: {
+                                    width: { ideal: 640 },
+                                    height: { ideal: 480 },
+                                    facingMode: 'user'
+                                },
+                                audio: false
+                            });
+                            if (!this.stream) {
+                                this.stream = requestedStream;
+                            } else {
+                                requestedStream.getTracks().forEach(track => track.stop());
+                            }
+                        }
 
                         const video = document.getElementById(videoElementId);
-                        if (video) {
-                            video.srcObject = this.stream;
-                            video.onloadedmetadata = () => {
-                                video.play();
-                                this.cameraReady = true;
-                            };
+                        if (!video) {
+                            throw new Error('Elemen video kamera tidak ditemukan.');
                         }
+
+                        if (video.srcObject !== this.stream) {
+                            video.srcObject = this.stream;
+                        }
+                        await video.play();
+                        this.cameraReady = true;
                     } catch (err) {
                         console.error('Kamera gagal dibuka:', err);
                         this.cameraReady = false;
@@ -562,9 +580,13 @@
                         }
 
                         this.serialWriter = this.serialPort.writable.getWriter();
+                        if (!this.serialPort.readable) {
+                            throw new Error('Port serial ESP32 tidak dapat dibaca untuk konfirmasi.');
+                        }
+                        this.serialReader = this.serialPort.readable.getReader();
                         this.buzzerConnected = true;
-                        this.buzzerStatus = 'ESP32 terhubung. Alarm aktif untuk wajah tak dikenal.';
-                        await this.sendBuzzerCommand('OFF');
+                        this.buzzerStatus = 'Port terbuka. Tekan Tes Buzzer ESP32 untuk memeriksa bunyi.';
+                        this.readBuzzerResponses(this.serialReader);
                     } catch (error) {
                         console.error('Koneksi buzzer ESP32 gagal:', error);
                         this.buzzerConnected = false;
@@ -573,11 +595,18 @@
                             this.serialWriter.releaseLock();
                             this.serialWriter = null;
                         }
+                        if (this.serialReader) {
+                            this.serialReader.cancel().catch(() => {});
+                            this.serialReader.releaseLock();
+                            this.serialReader = null;
+                        }
                         if (this.serialPort) {
                             try {
-                                await this.serialPort.close();
+                                if (this.serialPort.readable || this.serialPort.writable) {
+                                    await this.serialPort.close();
+                                }
                             } catch (closeError) {
-                                console.error('Port serial tidak dapat ditutup:', closeError);
+                                // Port belum sempat terbuka, abaikan error close
                             }
                         }
                         this.serialPort = null;
@@ -586,16 +615,46 @@
                     }
                 },
 
+                async readBuzzerResponses(reader) {
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    try {
+                        while (this.buzzerConnected) {
+                            const { value, done } = await reader.read();
+                            if (done) break;
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split(/\r?\n/);
+                            buffer = lines.pop() || '';
+                            lines.forEach(line => {
+                                const response = line.trim();
+                                if (response === 'READY') {
+                                    this.buzzerStatus = 'ESP32 siap. Tekan Tes Buzzer untuk menguji bunyi.';
+                                } else if (response.startsWith('ACK:')) {
+                                    this.buzzerStatus = `ESP32 menerima perintah ${response.slice(4)}.`;
+                                }
+                            });
+                        }
+                    } catch (error) {
+                        if (this.buzzerConnected) {
+                            console.error('Pembacaan status serial ESP32 gagal:', error);
+                            this.buzzerConnected = false;
+                            this.buzzerStatus = 'Koneksi serial ESP32 terputus.';
+                        }
+                    } finally {
+                        reader.releaseLock();
+                        if (this.serialReader === reader) this.serialReader = null;
+                    }
+                },
+
                 async sendBuzzerCommand(command) {
                     if (!this.serialWriter) {
-                        if (command === 'UNKNOWN') {
-                            this.buzzerStatus = 'Wajah tak dikenal terdeteksi, tetapi ESP32 belum tersambung.';
-                        }
+                        this.buzzerStatus = 'ESP32 belum tersambung.';
                         return;
                     }
 
                     try {
                         await this.serialWriter.write(new TextEncoder().encode(`${command}\n`));
+                        this.buzzerStatus = `Perintah ${command} dikirim; menunggu konfirmasi ESP32...`;
                     } catch (error) {
                         console.error('Pengiriman perintah buzzer gagal:', error);
                         this.buzzerConnected = false;
@@ -604,13 +663,19 @@
                         this.serialWriter = null;
                         if (this.serialPort) {
                             try {
-                                await this.serialPort.close();
+                                if (this.serialPort.readable || this.serialPort.writable) {
+                                    await this.serialPort.close();
+                                }
                             } catch (closeError) {
-                                console.error('Port serial terputus dan tidak dapat ditutup:', closeError);
+                                // Port sudah terputus, abaikan error close
                             }
                             this.serialPort = null;
                         }
                     }
+                },
+
+                async testBuzzer() {
+                    await this.sendBuzzerCommand('KNOWN');
                 },
 
                 stopCamera() {
@@ -677,10 +742,18 @@
                     this.kioskResult = data;
                     clearTimeout(this.resultTimeout);
 
-                    await this.sendBuzzerCommand(data.code === 'IDENTITY_NOT_FOUND' ? 'UNKNOWN' : 'OFF');
-
-                    // Sound effect
-                    this.playAudioFeedback(data.decision === 'ALLOW');
+                    const unknownFaceCodes = [
+                        'IDENTITY_NOT_FOUND',
+                        'LOW_MATCH_CONFIDENCE',
+                        'MEMBER_NOT_FOUND',
+                        'UNREGISTERED',
+                        'FACE_NOT_REGISTERED',
+                    ];
+                    const faceNotRegistered = data.decision === 'DENY'
+                        && (unknownFaceCodes.includes(data.code) || data.title === 'Wajah Belum Terdaftar');
+                    const checkinSucceeded = data.decision === 'ALLOW' && data.code === 'ACCESS_GRANTED';
+                    const buzzerCommand = checkinSucceeded ? 'KNOWN' : (faceNotRegistered ? 'UNKNOWN' : 'OFF');
+                    await this.sendBuzzerCommand(buzzerCommand);
 
                     // If ALLOW: prepend to table dynamically!
                     if (data.decision === 'ALLOW' && data.member) {
@@ -725,38 +798,6 @@
                     tbody.prepend(tr);
                 },
 
-                playAudioFeedback(isSuccess) {
-                    try {
-                        const AudioContext = window.AudioContext || window.webkitAudioContext;
-                        if (!AudioContext) return;
-                        const ctx = new AudioContext();
-                        const osc = ctx.createOscillator();
-                        const gain = ctx.createGain();
-                        osc.connect(gain);
-                        gain.connect(ctx.destination);
-
-                        if (isSuccess) {
-                            // Pleasant major 3rd beep
-                            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-                            osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.12); // A5
-                            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-                            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-                            osc.start();
-                            osc.stop(ctx.currentTime + 0.35);
-                        } else {
-                            // Low buzz
-                            osc.type = 'sawtooth';
-                            osc.frequency.setValueAtTime(160, ctx.currentTime);
-                            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-                            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-                            osc.start();
-                            osc.stop(ctx.currentTime + 0.3);
-                        }
-                    } catch (e) {
-                        // ignore audio context restrictions
-                    }
-                },
-
                 openFullscreen() {
                     const el = document.getElementById('fullscreenKiosk');
                     if (el) {
@@ -766,7 +807,6 @@
                             if (el.requestFullscreen) {
                                 el.requestFullscreen().catch(() => {});
                             }
-                            this.startCamera('fullscreenVideo');
                         });
                     }
                 },

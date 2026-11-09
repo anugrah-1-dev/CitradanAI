@@ -207,6 +207,7 @@ class FaceBoundingBox(APIModel):
 
 
 class LiveCameraMember(APIModel):
+    id: str
     full_name: str
     member_code: str
 

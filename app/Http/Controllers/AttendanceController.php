@@ -195,25 +195,36 @@ class AttendanceController extends Controller
 
             if ($registration !== 'REGISTERED' || empty($detected['member'])) {
                 $msg = 'Wajah belum terdaftar di sistem gym. Silakan hubungi kasir/staf untuk mendaftarkan wajah.';
-                if ($reasonCode === 'LOW_IMAGE_QUALITY' || $reasonCode === 'FACE_TOO_SMALL') {
+                $title = 'Wajah Belum Terdaftar';
+                if (in_array($reasonCode, [
+                    'FACE_TOO_SMALL',
+                    'IMAGE_TOO_BLURRY',
+                    'BAD_EXPOSURE',
+                    'LOW_IMAGE_QUALITY',
+                ], true)) {
+                    $title = 'Wajah Kurang Jelas';
                     $msg = 'Foto wajah kurang jelas atau terlalu jauh. Silakan mendekat ke kamera.';
                 }
 
                 return response()->json([
                     'decision' => 'DENY',
                     'code' => $reasonCode ?: 'UNREGISTERED',
-                    'title' => 'Wajah Belum Terdaftar',
+                    'title' => $title,
                     'message' => $msg,
                 ]);
             }
 
             $matchedMemberData = $detected['member'];
+            $faceApiMemberId = $matchedMemberData['id'] ?? '';
             $memberCode = $matchedMemberData['member_code'] ?? '';
             $fullName = $matchedMemberData['full_name'] ?? '';
 
-            $member = Member::where('member_id', $memberCode)->first();
+            $member = filled($faceApiMemberId)
+                ? Member::where('face_api_member_id', $faceApiMemberId)->first()
+                : null;
+            $member ??= Member::where('member_id', $memberCode)->first();
             if (! $member && filled($fullName)) {
-                $member = Member::where('name', $fullName)->first();
+                $member = Member::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($fullName))])->first();
             }
 
             if (! $member) {

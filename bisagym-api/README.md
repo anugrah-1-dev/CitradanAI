@@ -13,9 +13,24 @@ python -m app.seed
 uvicorn app.main:app --reload
 ```
 
-SQLite is the local default. Set `DATABASE_URL=postgresql+psycopg://...` for PostgreSQL.
+SQLite is the default for local development and tests. For deployment alongside the Laravel
+website, use a dedicated MySQL database for this API (for example `bisagym_biometrics_live`) rather
+than sharing Laravel's `BISAGYM` schema. Set `DATABASE_URL` to a
+`mysql+pymysql://user:password@host:3306/bisagym_biometrics_live` URL and create that database and
+grant the API user access before starting the service. PostgreSQL is also supported through
+`postgresql+psycopg://...`.
 API documentation is available at `/docs`. The demo password for all staff accounts is
 `GymDemo123!`; change all secrets before production use.
+
+To move an existing SQLite installation without removing its source database:
+
+1. Stop the biometric API and create the empty `bisagym_biometrics_live` MySQL database.
+2. Set `DATABASE_URL` in this directory's `.env` to the MySQL URL.
+3. Run `python -m app.migrate_sqlite_to_mysql` from this directory. The command applies the API
+   schema, copies the records from `gym.db`, verifies row counts, and refuses to overwrite a
+   populated MySQL target. Keep the SQLite file as a backup until the MySQL installation has been
+   verified.
+4. Start the API and verify `/health/model` and the member/face-profile data in the application.
 
 Local development defaults to `FACE_ENGINE=opencv_sface`, using the checked-in YuNet and SFace
 ONNX files under `runtime-models/`. Startup verifies both configured paths and SHA-256 hashes.

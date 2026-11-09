@@ -360,6 +360,7 @@ def test_live_camera_identifies_multiple_faces_without_creating_checkins(real_cl
     assert payload["image_height"] == 480
     assert payload["faces"][0]["registration"] == "REGISTERED"
     assert payload["faces"][0]["member"] == {
+        "id": member["id"],
         "full_name": member["full_name"],
         "member_code": member["member_code"],
     }

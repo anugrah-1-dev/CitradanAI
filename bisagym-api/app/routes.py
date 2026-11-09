@@ -1515,6 +1515,7 @@ async def analyze_live_camera_frame(
                 "reason_code": reason_code,
                 "member": (
                     {
+                        "id": matched_member.id,
                         "full_name": matched_member.full_name,
                         "member_code": matched_member.member_code,
                     }

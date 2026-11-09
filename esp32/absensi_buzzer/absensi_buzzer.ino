@@ -26,14 +26,29 @@ void startUnknownAlarm() {
   nextBuzzerChangeAt = millis() + BEEP_ON_MS;
 }
 
+void startKnownBeep() {
+  beepsRemaining = 1;
+  buzzerActive = true;
+  buzzerOutputOn = true;
+  digitalWrite(BUZZER_PIN, HIGH);
+  nextBuzzerChangeAt = millis() + 150; // Beep pendek sekali (150ms) tanda berhasil
+}
+
 void processCommand(String command) {
   command.trim();
   command.toUpperCase();
 
   if (command == "UNKNOWN") {
     startUnknownAlarm();
-  } else if (command == "OFF" || command == "KNOWN") {
+    Serial.println("ACK:UNKNOWN");
+  } else if (command == "KNOWN" || command == "SUCCESS") {
+    startKnownBeep();
+    Serial.println("ACK:KNOWN");
+  } else if (command == "OFF") {
     stopBuzzer();
+    Serial.println("ACK:OFF");
+  } else {
+    Serial.println("ACK:INVALID");
   }
 }
 
@@ -78,6 +93,7 @@ void setup() {
   stopBuzzer();
   Serial.begin(SERIAL_BAUD_RATE);
   commandBuffer.reserve(32);
+  Serial.println("READY");
 }
 
 void loop() {

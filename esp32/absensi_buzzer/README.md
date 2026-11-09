@@ -19,9 +19,9 @@ Sketch `absensi_buzzer.ino` saat ini menggunakan GPIO 23. Jika Anda memilih pin 
 1. Pasang Arduino IDE dan dukungan board **esp32 by Espressif Systems** melalui Boards Manager.
 2. Buka `absensi_buzzer.ino` di Arduino IDE, pilih board ESP32 yang sesuai dan port USB ESP32.
 3. Hubungkan buzzer sesuai tabel. Tutup Serial Monitor setelah upload selesai karena port hanya dapat digunakan satu aplikasi pada satu waktu.
-4. Upload sketch. Untuk uji mandiri, buka Serial Monitor pada **115200 baud**, kirim `UNKNOWN` dengan line ending newline, lalu pastikan buzzer berbunyi tiga kali. Perintah `OFF` menghentikan buzzer.
+4. Upload sketch. Untuk uji mandiri, buka Serial Monitor pada **115200 baud**, kirim `UNKNOWN` dengan line ending newline, lalu pastikan buzzer berbunyi tiga kali dan Serial Monitor menerima `ACK:UNKNOWN`. Perintah `OFF` menghentikan buzzer.
 5. Jalankan API biometrik dan Laravel seperti biasa. Buka halaman absensi di Chrome atau Edge terbaru melalui `localhost` atau HTTPS.
 6. Tekan **Sambungkan Buzzer ESP32**, pilih port USB ESP32, lalu izinkan akses. Tombol ini harus ditekan langsung oleh pengguna karena browser meminta izin serial.
-7. Jalankan scan wajah. Respons `IDENTITY_NOT_FOUND` dari YuNet/SFace mengirim `UNKNOWN` ke ESP32; respons lain mengirim `OFF`. Pastikan status menunjukkan ESP32 terhubung.
+7. Jalankan scan wajah. Check-in berhasil mengirim `KNOWN` (satu beep pendek); wajah yang tidak dikenali atau tidak cocok dengan data member mengirim `UNKNOWN` (tiga beep). Penolakan lain seperti membership kedaluwarsa mengirim `OFF`. Pastikan status menunjukkan ESP32 terhubung.
 
-Koneksi USB serial digunakan oleh browser yang menjalankan halaman absensi. Jika halaman dibuka dari perangkat lain, ESP32 juga harus tersambung ke perangkat browser tersebut. Jangan biarkan Serial Monitor atau aplikasi lain memegang COM port saat browser menggunakannya.
+Koneksi USB serial digunakan oleh browser yang menjalankan halaman absensi. Jika halaman dibuka dari perangkat lain, ESP32 juga harus tersambung ke perangkat browser tersebut. Jangan biarkan Serial Monitor atau aplikasi lain memegang COM port saat browser menggunakannya. Status “ESP32 terhubung” hanya memastikan browser dapat membuka port serial; gunakan tombol **Tes Buzzer ESP32** dan pastikan status berubah menjadi `ESP32 menerima perintah KNOWN.` Jika ACK diterima tetapi buzzer diam, periksa kabel GPIO 23/GND/VCC, kesamaan ground, polaritas modul, dan pastikan buzzer aktif (bukan passive buzzer). Jika tidak ada ACK, unggah sketch terbaru dan sambungkan ulang ESP32.
