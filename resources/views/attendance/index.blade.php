@@ -227,16 +227,16 @@
                             <span x-text="scanning ? 'Sedang Memverifikasi...' : 'Mulai Check-in Wajah'"></span>
                         </button>
 
-                        <button type="button" @click="connectBuzzer()" :disabled="buzzerConnecting || buzzerConnected"
+                        <button type="button" @click="connectEsp32()" :disabled="esp32Connecting || esp32Connected"
                             class="w-full bg-dark hover:bg-gray-800 disabled:opacity-50 text-gray-200 font-semibold py-2.5 px-4 rounded-lg border border-gray-700 transition-colors flex items-center justify-center space-x-2">
-                            <i class="ph ph-speaker-high text-lg"></i>
-                            <span x-text="buzzerConnecting ? 'Menyambungkan ESP32...' : (buzzerConnected ? 'ESP32 Terhubung' : 'Sambungkan Buzzer ESP32')"></span>
+                            <i class="ph ph-cpu text-lg"></i>
+                            <span x-text="esp32Connecting ? 'Menyambungkan ESP32...' : (esp32Connected ? 'ESP32 Terhubung' : 'Sambungkan Output ESP32')"></span>
                         </button>
-                        <button type="button" @click="testBuzzer()" :disabled="!buzzerConnected"
+                        <button type="button" @click="testEsp32Output()" :disabled="!esp32Connected"
                             class="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 font-semibold py-2.5 px-4 rounded-lg border border-gray-700 transition-colors">
-                            Tes Buzzer ESP32
+                            Tes Output ESP32 (LED/LCD/Buzzer)
                         </button>
-                        <p class="text-xs text-gray-400 text-center" role="status" x-text="buzzerStatus"></p>
+                        <p class="text-xs text-gray-400 text-center" role="status" x-text="esp32Status"></p>
 
                         <div class="flex items-center justify-between text-xs text-gray-400 pt-1">
                             <label class="flex items-center space-x-2 cursor-pointer select-none">
@@ -416,16 +416,16 @@
                         <i class="ph ph-scan text-2xl"></i>
                         <span x-text="scanning ? 'MEMPROSES WAJAH...' : 'MULAI CHECK-IN SEKARANG'"></span>
                     </button>
-                    <button type="button" @click="connectBuzzer()" :disabled="buzzerConnecting || buzzerConnected"
+                    <button type="button" @click="connectEsp32()" :disabled="esp32Connecting || esp32Connected"
                         class="w-full mt-2 bg-dark hover:bg-gray-800 disabled:opacity-50 text-gray-200 font-semibold py-3 px-4 rounded-xl border border-gray-700 transition-colors flex items-center justify-center space-x-2">
-                        <i class="ph ph-speaker-high text-lg"></i>
-                        <span x-text="buzzerConnecting ? 'Menyambungkan ESP32...' : (buzzerConnected ? 'ESP32 Terhubung' : 'Sambungkan Buzzer ESP32')"></span>
+                        <i class="ph ph-cpu text-lg"></i>
+                        <span x-text="esp32Connecting ? 'Menyambungkan ESP32...' : (esp32Connected ? 'ESP32 Terhubung' : 'Sambungkan Output ESP32')"></span>
                     </button>
-                    <button type="button" @click="testBuzzer()" :disabled="!buzzerConnected"
+                    <button type="button" @click="testEsp32Output()" :disabled="!esp32Connected"
                         class="w-full mt-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 font-semibold py-3 px-4 rounded-xl border border-gray-700 transition-colors">
-                        Tes Buzzer ESP32
+                        Tes Output ESP32 (LED/LCD/Buzzer)
                     </button>
-                    <p class="text-xs text-gray-400 text-center mt-2" role="status" x-text="buzzerStatus"></p>
+                    <p class="text-xs text-gray-400 text-center mt-2" role="status" x-text="esp32Status"></p>
                 </div>
 
                 <!-- Info / Feedback Side -->
@@ -502,9 +502,9 @@
                 serialPort: null,
                 serialWriter: null,
                 serialReader: null,
-                buzzerConnecting: false,
-                buzzerConnected: false,
-                buzzerStatus: 'Buzzer belum tersambung.',
+                esp32Connecting: false,
+                esp32Connected: false,
+                esp32Status: 'Output ESP32 belum tersambung.',
 
                 init() {
                     // Clock for fullscreen
@@ -565,13 +565,13 @@
                     }
                 },
 
-                async connectBuzzer() {
+                async connectEsp32() {
                     if (!('serial' in navigator)) {
-                        this.buzzerStatus = 'Web Serial tidak tersedia. Gunakan Chrome/Edge di localhost atau HTTPS.';
+                        this.esp32Status = 'Web Serial tidak tersedia. Gunakan Chrome/Edge di localhost atau HTTPS.';
                         return;
                     }
 
-                    this.buzzerConnecting = true;
+                    this.esp32Connecting = true;
                     try {
                         this.serialPort = await navigator.serial.requestPort();
                         await this.serialPort.open({ baudRate: 115200 });
@@ -584,13 +584,13 @@
                             throw new Error('Port serial ESP32 tidak dapat dibaca untuk konfirmasi.');
                         }
                         this.serialReader = this.serialPort.readable.getReader();
-                        this.buzzerConnected = true;
-                        this.buzzerStatus = 'Port terbuka. Tekan Tes Buzzer ESP32 untuk memeriksa bunyi.';
-                        this.readBuzzerResponses(this.serialReader);
+                        this.esp32Connected = true;
+                        this.esp32Status = 'Port terbuka. Tes output untuk memeriksa LED, LCD, dan buzzer.';
+                        this.readEsp32Responses(this.serialReader);
                     } catch (error) {
-                        console.error('Koneksi buzzer ESP32 gagal:', error);
-                        this.buzzerConnected = false;
-                        this.buzzerStatus = `Koneksi buzzer gagal: ${error.message || 'Periksa port dan kabel USB.'}`;
+                        console.error('Koneksi output ESP32 gagal:', error);
+                        this.esp32Connected = false;
+                        this.esp32Status = `Koneksi ESP32 gagal: ${error.message || 'Periksa port dan kabel USB.'}`;
                         if (this.serialWriter) {
                             this.serialWriter.releaseLock();
                             this.serialWriter = null;
@@ -611,15 +611,15 @@
                         }
                         this.serialPort = null;
                     } finally {
-                        this.buzzerConnecting = false;
+                        this.esp32Connecting = false;
                     }
                 },
 
-                async readBuzzerResponses(reader) {
+                async readEsp32Responses(reader) {
                     const decoder = new TextDecoder();
                     let buffer = '';
                     try {
-                        while (this.buzzerConnected) {
+                        while (this.esp32Connected) {
                             const { value, done } = await reader.read();
                             if (done) break;
                             buffer += decoder.decode(value, { stream: true });
@@ -628,17 +628,17 @@
                             lines.forEach(line => {
                                 const response = line.trim();
                                 if (response === 'READY') {
-                                    this.buzzerStatus = 'ESP32 siap. Tekan Tes Buzzer untuk menguji bunyi.';
+                                    this.esp32Status = 'ESP32 siap. Output LED/LCD/buzzer aktif.';
                                 } else if (response.startsWith('ACK:')) {
-                                    this.buzzerStatus = `ESP32 menerima perintah ${response.slice(4)}.`;
+                                    this.esp32Status = `ESP32 menerima perintah ${response.slice(4)}.`;
                                 }
                             });
                         }
                     } catch (error) {
-                        if (this.buzzerConnected) {
+                        if (this.esp32Connected) {
                             console.error('Pembacaan status serial ESP32 gagal:', error);
-                            this.buzzerConnected = false;
-                            this.buzzerStatus = 'Koneksi serial ESP32 terputus.';
+                            this.esp32Connected = false;
+                            this.esp32Status = 'Koneksi serial ESP32 terputus.';
                         }
                     } finally {
                         reader.releaseLock();
@@ -646,19 +646,19 @@
                     }
                 },
 
-                async sendBuzzerCommand(command) {
+                async sendEsp32Command(command) {
                     if (!this.serialWriter) {
-                        this.buzzerStatus = 'ESP32 belum tersambung.';
+                        this.esp32Status = 'ESP32 belum tersambung.';
                         return;
                     }
 
                     try {
                         await this.serialWriter.write(new TextEncoder().encode(`${command}\n`));
-                        this.buzzerStatus = `Perintah ${command} dikirim; menunggu konfirmasi ESP32...`;
+                        this.esp32Status = `Perintah ${command} dikirim; menunggu konfirmasi ESP32...`;
                     } catch (error) {
-                        console.error('Pengiriman perintah buzzer gagal:', error);
-                        this.buzzerConnected = false;
-                        this.buzzerStatus = 'Koneksi ESP32 terputus. Sambungkan kembali buzzer.';
+                        console.error('Pengiriman perintah ESP32 gagal:', error);
+                        this.esp32Connected = false;
+                        this.esp32Status = 'Koneksi ESP32 terputus. Sambungkan kembali perangkat.';
                         this.serialWriter.releaseLock();
                         this.serialWriter = null;
                         if (this.serialPort) {
@@ -674,8 +674,8 @@
                     }
                 },
 
-                async testBuzzer() {
-                    await this.sendBuzzerCommand('KNOWN');
+                async testEsp32Output() {
+                    await this.sendEsp32Command('TEST');
                 },
 
                 stopCamera() {
@@ -706,6 +706,12 @@
 
                     canvas.toBlob(async (blob) => {
                         if (!blob) {
+                            await this.handleCheckinResult({
+                                decision: 'DENY',
+                                code: 'EMPTY_IMAGE',
+                                title: 'Gambar Tidak Ditemukan',
+                                message: 'Kamera belum menghasilkan foto wajah yang valid.'
+                            });
                             this.scanning = false;
                             return;
                         }
@@ -752,8 +758,8 @@
                     const faceNotRegistered = data.decision === 'DENY'
                         && (unknownFaceCodes.includes(data.code) || data.title === 'Wajah Belum Terdaftar');
                     const checkinSucceeded = data.decision === 'ALLOW' && data.code === 'ACCESS_GRANTED';
-                    const buzzerCommand = checkinSucceeded ? 'KNOWN' : (faceNotRegistered ? 'UNKNOWN' : 'OFF');
-                    await this.sendBuzzerCommand(buzzerCommand);
+                    const outputCommand = checkinSucceeded ? 'SUCCESS' : (faceNotRegistered ? 'UNKNOWN' : 'FAIL');
+                    await this.sendEsp32Command(outputCommand);
 
                     // If ALLOW: prepend to table dynamically!
                     if (data.decision === 'ALLOW' && data.member) {
