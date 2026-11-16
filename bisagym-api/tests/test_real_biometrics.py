@@ -27,6 +27,12 @@ class DeterministicSFaceEngine:
     dimension = 4
 
     def analyze_enrollment_sample(self, image_bytes: bytes) -> RecognitionResult:
+        if image_bytes == b"blurry":
+            return RecognitionResult(
+                1, 0.65, None, errors=["IMAGE_TOO_BLURRY"], blur_measure=22.5
+            )
+        if image_bytes == b"low-quality":
+            return RecognitionResult(1, 0.65, None, embedding=[1.0, 0.0, 0.0, 0.0])
         return self.identify(image_bytes, "enrollment")
 
     def identify(self, image_bytes: bytes, branch_id: str) -> RecognitionResult:
@@ -192,6 +198,60 @@ def test_raw_enrollment_is_mode_checked_and_descriptors_are_transient(real_clien
         assert profile is not None and profile.embedding_dimension == 4
 
 
+def test_enrollment_preview_scores_candidates_without_saving_them(real_client):
+    client, _, _ = real_client
+    headers = admin_headers(client)
+    _, session = create_enrollment(client, headers)
+    endpoint = f"/api/v1/enrollments/sessions/{session['id']}/samples"
+    image_headers = {**headers, "Content-Type": "image/jpeg"}
+
+    blurry = client.post(
+        f"{endpoint}?pose_type=FRONT&preview=true",
+        headers=image_headers,
+        content=b"blurry",
+    )
+    assert blurry.status_code == 200
+    assert blurry.json() == {
+        "accepted": False,
+        "quality_score": 0.65,
+        "reason_code": "IMAGE_TOO_BLURRY",
+        "blur_measure": 22.5,
+        "blur_threshold": 15.0,
+    }
+
+    low_quality = client.post(
+        f"{endpoint}?pose_type=FRONT&preview=true",
+        headers=image_headers,
+        content=b"low-quality",
+    )
+    assert low_quality.status_code == 200
+    assert low_quality.json()["reason_code"] == "LOW_IMAGE_QUALITY"
+
+    accepted = client.post(
+        f"{endpoint}?pose_type=FRONT&preview=true",
+        headers=image_headers,
+        content=b"face-one",
+    )
+    assert accepted.status_code == 200
+    assert accepted.json() == {
+        "accepted": True,
+        "quality_score": 0.95,
+        "reason_code": None,
+        "blur_measure": None,
+        "blur_threshold": 15.0,
+    }
+
+    with SessionLocal() as db:
+        samples = list(
+            db.scalars(
+                select(FaceEnrollmentSample).where(
+                    FaceEnrollmentSample.enrollment_session_id == session["id"]
+                )
+            )
+        )
+        assert samples == []
+
+
 def test_raw_checkin_scopes_models_and_does_not_fabricate_liveness(real_client):
     client, settings, engine = real_client
     headers = admin_headers(client)
@@ -318,6 +378,27 @@ def test_opencv_engine_rejects_generated_malformed_bytes_and_reports_models():
     assert health["status"] == "ready"
     assert health["embedding_dimension"] == 128
     assert health["models"]["detection"]["sha256"].startswith("8F2383E4")
+
+
+def test_face_blur_check_uses_configured_threshold_and_returns_measure():
+    settings = Settings()
+    assert settings.face_blur_threshold == 35.0
+    assert settings.face_enrollment_blur_threshold == 15.0
+    engine = OpenCvSFaceEngine(settings)
+    pattern = (engine.np.indices((160, 160)).sum(axis=0) % 2).astype(engine.np.uint8)
+    image = engine.np.repeat((128 + pattern)[:, :, None], 3, axis=2)
+
+    _, checkin_errors, blur_measure = engine._quality(image, [0, 0, 160, 160, 0.99])
+    _, enrollment_errors, enrollment_blur = engine._quality(
+        image,
+        [0, 0, 160, 160, 0.99],
+        blur_threshold=settings.face_enrollment_blur_threshold,
+    )
+
+    assert blur_measure == enrollment_blur
+    assert settings.face_enrollment_blur_threshold < blur_measure < settings.face_blur_threshold
+    assert "IMAGE_TOO_BLURRY" in checkin_errors
+    assert "IMAGE_TOO_BLURRY" not in enrollment_errors
 
 
 def test_embedding_math_rejects_non_finite_and_zero_vectors():

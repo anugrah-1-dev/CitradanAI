@@ -145,6 +145,19 @@ class FaceRecognitionApi
         );
     }
 
+    public function previewSample(string $sessionId, string $pose, string $image): array
+    {
+        return $this->request(
+            'POST',
+            '/enrollments/sessions/'.$sessionId.'/samples?'.http_build_query([
+                'pose_type' => $pose,
+                'preview' => 'true',
+            ]),
+            $image,
+            'image/jpeg',
+        );
+    }
+
     public function completeEnrollment(string $sessionId): array
     {
         return $this->request('POST', "/enrollments/sessions/{$sessionId}/complete");

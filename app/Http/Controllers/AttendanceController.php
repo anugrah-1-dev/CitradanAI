@@ -233,6 +233,7 @@ class AttendanceController extends Controller
                     'code' => 'MEMBER_NOT_FOUND',
                     'title' => 'Data Member Tidak Cocok',
                     'message' => 'Wajah dikenali tapi data member tidak ditemukan di sistem lokal.',
+                    'recognized_name' => $fullName,
                 ]);
             }
 

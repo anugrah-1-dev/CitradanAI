@@ -1,0 +1,236 @@
+#include <Arduino.h>
+#line 1 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+const uint8_t LCD_SDA_PIN = 22;
+const uint8_t LCD_SCL_PIN = 23;
+const uint8_t RED_LED_PIN = 18;
+const uint8_t GREEN_LED_PIN = 19;
+const uint8_t BUZZER_PIN = 13;
+const uint8_t LCD_ADDRESS = 0x27;
+const uint8_t LCD_COLUMNS = 16;
+const uint8_t LCD_ROWS = 2;
+const uint32_t SERIAL_BAUD_RATE = 115200;
+const uint16_t UNKNOWN_BEEP_ON_MS = 180;
+const uint16_t UNKNOWN_BEEP_OFF_MS = 140;
+const uint16_t TEST_BEEP_ON_MS = 150;
+const uint8_t UNKNOWN_BEEP_COUNT = 3;
+const size_t MAX_COMMAND_LENGTH = 96;
+
+LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS);
+
+bool buzzerActive = false;
+bool buzzerOutputOn = false;
+uint8_t beepsRemaining = 0;
+uint16_t beepOnDuration = UNKNOWN_BEEP_ON_MS;
+uint16_t beepOffDuration = UNKNOWN_BEEP_OFF_MS;
+uint32_t nextBuzzerChangeAt = 0;
+
+String commandBuffer;
+bool commandOverflow = false;
+String scrollingName;
+uint16_t nameScrollPosition = 0;
+uint32_t nextNameScrollAt = 0;
+
+#line 34 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void printLcdLine(uint8_t row, const String& text);
+#line 41 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void showReadyScreen();
+#line 47 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void showUnknownScreen();
+#line 53 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void showRecognizedScreen(const String& memberName);
+#line 61 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void updateScrollingName();
+#line 75 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void setStatusLeds(bool knownFace);
+#line 80 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void stopBuzzer();
+#line 87 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void startBeepSequence(uint8_t count, uint16_t onDuration, uint16_t offDuration);
+#line 102 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void processCommand(String command);
+#line 139 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void readSerialCommands();
+#line 161 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void updateBuzzer();
+#line 183 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void setup();
+#line 202 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void loop();
+#line 34 "D:\\project\\CitradanAI\\esp32\\absensi_buzzer\\absensi_buzzer.ino"
+void printLcdLine(uint8_t row, const String& text) {
+  lcd.setCursor(0, row);
+  for (uint8_t column = 0; column < LCD_COLUMNS; ++column) {
+    lcd.print(column < text.length() ? text[column] : ' ');
+  }
+}
+
+void showReadyScreen() {
+  scrollingName = "";
+  printLcdLine(0, "Sistem siap");
+  printLcdLine(1, "Scan wajah...");
+}
+
+void showUnknownScreen() {
+  scrollingName = "";
+  printLcdLine(0, "Wajah tidak");
+  printLcdLine(1, "dikenali");
+}
+
+void showRecognizedScreen(const String& memberName) {
+  scrollingName = memberName.length() > LCD_COLUMNS ? memberName + "   " : "";
+  nameScrollPosition = 0;
+  printLcdLine(0, "Member dikenali");
+  printLcdLine(1, memberName);
+  nextNameScrollAt = millis() + 450;
+}
+
+void updateScrollingName() {
+  if (scrollingName.length() == 0 || static_cast<int32_t>(millis() - nextNameScrollAt) < 0) {
+    return;
+  }
+
+  String visibleName;
+  for (uint8_t offset = 0; offset < LCD_COLUMNS; ++offset) {
+    visibleName += scrollingName[(nameScrollPosition + offset) % scrollingName.length()];
+  }
+  printLcdLine(1, visibleName);
+  nameScrollPosition = (nameScrollPosition + 1) % scrollingName.length();
+  nextNameScrollAt = millis() + 350;
+}
+
+void setStatusLeds(bool knownFace) {
+  digitalWrite(RED_LED_PIN, knownFace ? LOW : HIGH);
+  digitalWrite(GREEN_LED_PIN, knownFace ? HIGH : LOW);
+}
+
+void stopBuzzer() {
+  buzzerActive = false;
+  buzzerOutputOn = false;
+  beepsRemaining = 0;
+  digitalWrite(BUZZER_PIN, LOW);
+}
+
+void startBeepSequence(uint8_t count, uint16_t onDuration, uint16_t offDuration) {
+  stopBuzzer();
+  if (count == 0) {
+    return;
+  }
+
+  beepsRemaining = count;
+  beepOnDuration = onDuration;
+  beepOffDuration = offDuration;
+  buzzerActive = true;
+  buzzerOutputOn = true;
+  digitalWrite(BUZZER_PIN, HIGH);
+  nextBuzzerChangeAt = millis() + beepOnDuration;
+}
+
+void processCommand(String command) {
+  command.trim();
+  const int separator = command.indexOf(':');
+  String action = separator >= 0 ? command.substring(0, separator) : command;
+  String value = separator >= 0 ? command.substring(separator + 1) : "";
+  action.trim();
+  action.toUpperCase();
+  value.trim();
+
+  if (action == "UNKNOWN") {
+    setStatusLeds(false);
+    showUnknownScreen();
+    startBeepSequence(UNKNOWN_BEEP_COUNT, UNKNOWN_BEEP_ON_MS, UNKNOWN_BEEP_OFF_MS);
+    Serial.println("ACK:UNKNOWN");
+  } else if (action == "KNOWN" || action == "SUCCESS") {
+    setStatusLeds(true);
+    stopBuzzer();
+    showRecognizedScreen(value.length() > 0 ? value : "Member dikenali");
+    Serial.println("ACK:KNOWN");
+  } else if (action == "TEST") {
+    setStatusLeds(true);
+    scrollingName = "";
+    printLcdLine(0, "Tes perangkat");
+    printLcdLine(1, "ESP32 siap");
+    startBeepSequence(1, TEST_BEEP_ON_MS, 0);
+    Serial.println("ACK:TEST");
+  } else if (action == "OFF") {
+    stopBuzzer();
+    digitalWrite(RED_LED_PIN, LOW);
+    digitalWrite(GREEN_LED_PIN, LOW);
+    showReadyScreen();
+    Serial.println("ACK:OFF");
+  } else {
+    Serial.println("ACK:INVALID");
+  }
+}
+
+void readSerialCommands() {
+  while (Serial.available() > 0) {
+    const char incoming = static_cast<char>(Serial.read());
+    if (incoming == '\n') {
+      if (!commandOverflow) {
+        processCommand(commandBuffer);
+      } else {
+        Serial.println("ACK:INVALID");
+      }
+      commandBuffer = "";
+      commandOverflow = false;
+    } else if (incoming != '\r' && !commandOverflow) {
+      if (commandBuffer.length() < MAX_COMMAND_LENGTH) {
+        commandBuffer += incoming;
+      } else {
+        commandBuffer = "";
+        commandOverflow = true;
+      }
+    }
+  }
+}
+
+void updateBuzzer() {
+  if (!buzzerActive || static_cast<int32_t>(millis() - nextBuzzerChangeAt) < 0) {
+    return;
+  }
+
+  if (buzzerOutputOn) {
+    buzzerOutputOn = false;
+    digitalWrite(BUZZER_PIN, LOW);
+    --beepsRemaining;
+    if (beepsRemaining == 0) {
+      buzzerActive = false;
+      return;
+    }
+    nextBuzzerChangeAt = millis() + beepOffDuration;
+    return;
+  }
+
+  buzzerOutputOn = true;
+  digitalWrite(BUZZER_PIN, HIGH);
+  nextBuzzerChangeAt = millis() + beepOnDuration;
+}
+
+void setup() {
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  stopBuzzer();
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, LOW);
+
+  Serial.begin(SERIAL_BAUD_RATE);
+  commandBuffer.reserve(MAX_COMMAND_LENGTH);
+
+  Wire.begin(LCD_SDA_PIN, LCD_SCL_PIN);
+  lcd.init();
+  lcd.backlight();
+  showReadyScreen();
+
+  Serial.println("READY");
+}
+
+void loop() {
+  readSerialCommands();
+  updateBuzzer();
+  updateScrollingName();
+}
+

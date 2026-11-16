@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     face_max_image_pixels: int = 12_000_000
     face_min_size_pixels: int = 80
     face_min_size_ratio: float = 0.10
-    face_blur_threshold: float = 80.0
+    face_blur_threshold: float = 35.0
+    face_enrollment_blur_threshold: float = 15.0
     face_min_exposure: float = 45.0
     face_max_exposure: float = 210.0
     face_max_clipped_fraction: float = 0.30
@@ -97,6 +98,13 @@ class Settings(BaseSettings):
     def positive_match_threshold(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("face_match_threshold must be greater than zero")
+        return value
+
+    @field_validator("face_blur_threshold", "face_enrollment_blur_threshold")
+    @classmethod
+    def positive_blur_threshold(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("blur thresholds must be greater than zero")
         return value
 
     @model_validator(mode="after")

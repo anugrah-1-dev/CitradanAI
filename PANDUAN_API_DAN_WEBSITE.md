@@ -13,7 +13,6 @@ Website-BisaGym/
 │   │   └── ServeFaceApiCommand.php     <- Perintah Artisan php artisan face-api:serve
 │   ├── Http/Controllers/
 │   │   ├── FaceEnrollmentController.php
-│   │   ├── StreamingCameraController.php
 │   │   └── DeviceController.php
 │   └── Services/
 │       └── FaceRecognitionApi.php      <- Terhubung ke bisagym-api (port 8001)
@@ -70,4 +69,3 @@ Saat API berjalan, Anda dapat memverifikasi statusnya langsung di browser:
 * Dokumentasi Swagger: [http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)
 
 Kedua endpoint harus menampilkan `"status": "ready"`.
-

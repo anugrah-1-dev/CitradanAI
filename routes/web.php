@@ -44,13 +44,10 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/face-enrollment', [\App\Http\Controllers\FaceEnrollmentController::class, 'index'])->name('face-enrollment.index');
     Route::post('/face-enrollment/{member}/start', [\App\Http\Controllers\FaceEnrollmentController::class, 'start'])->name('face-enrollment.start');
+    Route::post('/face-enrollment/{member}/preview', [\App\Http\Controllers\FaceEnrollmentController::class, 'preview'])->name('face-enrollment.preview');
     Route::post('/face-enrollment/{member}/samples', [\App\Http\Controllers\FaceEnrollmentController::class, 'sample'])->name('face-enrollment.sample');
     Route::post('/face-enrollment/{member}/complete', [\App\Http\Controllers\FaceEnrollmentController::class, 'complete'])->name('face-enrollment.complete');
     Route::post('/face-enrollment/{member}/revoke', [\App\Http\Controllers\FaceEnrollmentController::class, 'revoke'])->name('face-enrollment.revoke');
-
-    // Streaming Kamera (semua role)
-    Route::get('/streaming', [\App\Http\Controllers\StreamingCameraController::class, 'index'])->name('streaming.index');
-    Route::post('/streaming/analyze', [\App\Http\Controllers\StreamingCameraController::class, 'analyze'])->name('streaming.analyze');
 
     // Perangkat / Devices (semua role)
     Route::get('/devices', [\App\Http\Controllers\DeviceController::class, 'index'])->name('devices.index');

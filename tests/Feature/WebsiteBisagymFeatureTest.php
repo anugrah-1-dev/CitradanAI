@@ -155,18 +155,10 @@ class WebsiteBisagymFeatureTest extends TestCase
         $response->assertStatus(200);
     }
 
-    public function test_streaming_page_loads_for_admin(): void
+    public function test_streaming_routes_are_removed(): void
     {
-        $response = $this->actingAs($this->admin)->get('/streaming');
-        $response->assertStatus(200);
-        $response->assertSee('Streaming Kamera');
-    }
-
-    public function test_streaming_page_loads_for_penjaga(): void
-    {
-        $response = $this->actingAs($this->penjaga)->get('/streaming');
-        $response->assertStatus(200);
-        $response->assertSee('Streaming Kamera');
+        $this->actingAs($this->admin)->get('/streaming')->assertNotFound();
+        $this->post('/streaming/analyze')->assertNotFound();
     }
 
     public function test_devices_page_loads_for_admin(): void
@@ -181,12 +173,6 @@ class WebsiteBisagymFeatureTest extends TestCase
         $response = $this->actingAs($this->penjaga)->get('/devices');
         $response->assertStatus(200);
         $response->assertSee('Perangkat');
-    }
-
-    public function test_streaming_requires_auth(): void
-    {
-        $response = $this->get('/streaming');
-        $response->assertRedirect('/login');
     }
 
     public function test_devices_requires_auth(): void
@@ -216,4 +202,3 @@ class WebsiteBisagymFeatureTest extends TestCase
         $response->assertJson(['decision' => 'DENY', 'code' => 'EMPTY_IMAGE']);
     }
 }
-

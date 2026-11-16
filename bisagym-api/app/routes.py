@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -1117,6 +1117,7 @@ async def add_enrollment_sample(
     session_id: str,
     request: Request,
     pose_type: str | None = Query(default=None),
+    preview: bool = Query(default=False),
     user: User = Depends(require_roles(*STAFF_ROLES)),
     db: Session = Depends(get_db),
     settings: Settings = Depends(app_settings),
@@ -1164,6 +1165,38 @@ async def add_enrollment_sample(
         depth_quality_score = None
 
     result = engine.analyze_enrollment_sample(image_bytes)
+    if preview:
+        reason_code = None
+        if result.detected_face_count != 1:
+            reason_code = recognition_error_code(result.errors, result.detected_face_count)
+        elif result.errors:
+            reason_code = result.errors[0]
+        elif result.quality_score is None or result.quality_score < settings.face_min_quality_score:
+            reason_code = "LOW_IMAGE_QUALITY"
+        elif settings.liveness_mode != "none" and (
+            result.liveness_score is None or result.liveness_score < settings.liveness_min_score
+        ):
+            reason_code = "LIVENESS_FAILED"
+        elif result.embedding is None or len(result.embedding) != engine.dimension:
+            reason_code = "EMBEDDING_EXTRACTION_FAILED"
+        elif settings.depth_validation_enabled and (
+            not depth_available
+            or depth_quality_score is None
+            or depth_quality_score < settings.depth_min_score
+        ):
+            reason_code = "DEPTH_VALIDATION_FAILED"
+
+        return JSONResponse(
+            content={
+                "accepted": reason_code is None,
+                "quality_score": result.quality_score,
+                "reason_code": reason_code,
+                "blur_measure": result.blur_measure,
+                "blur_threshold": settings.face_enrollment_blur_threshold,
+            },
+            status_code=200,
+        )
+
     if result.detected_face_count != 1:
         code = recognition_error_code(result.errors, result.detected_face_count)
         raise APIError(422, code, "Exactly one face is required.")

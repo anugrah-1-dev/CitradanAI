@@ -147,6 +147,43 @@ class FaceEnrollmentController extends Controller
         }
     }
 
+    public function preview(Request $request, Member $member, FaceRecognitionApi $faceApi): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'session_id' => ['required', 'string', 'size:36'],
+                'pose_type' => ['required', 'in:FRONT,LEFT,RIGHT'],
+            ]);
+            $image = $request->getContent();
+
+            if ($member->face_enrollment_status !== 'IN_PROGRESS'
+                || $member->face_enrollment_session_id !== $validated['session_id']) {
+                return response()->json([
+                    'message' => 'Sesi pendaftaran tidak aktif. Mulai ulang pendaftaran wajah.',
+                ], 409);
+            }
+
+            if ($image === '' || strlen($image) > 5_000_000) {
+                return response()->json([
+                    'message' => 'Gambar kosong atau melebihi batas ukuran 5 MB.',
+                ], 422);
+            }
+
+            return response()->json($faceApi->previewSample(
+                $validated['session_id'],
+                $validated['pose_type'],
+                $image,
+            ));
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'message' => 'Data sampel tidak valid.',
+                'errors' => $exception->errors(),
+            ], 422);
+        } catch (FaceRecognitionApiException $exception) {
+            return $this->apiError($exception);
+        }
+    }
+
     public function complete(Member $member, FaceRecognitionApi $faceApi): JsonResponse
     {
         try {

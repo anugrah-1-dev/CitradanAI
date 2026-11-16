@@ -502,9 +502,9 @@
                 serialPort: null,
                 serialWriter: null,
                 serialReader: null,
-                esp32Connecting: false,
-                esp32Connected: false,
-                esp32Status: 'Output ESP32 belum tersambung.',
+                buzzerConnecting: false,
+                buzzerConnected: false,
+                buzzerStatus: 'Buzzer belum tersambung.',
 
                 init() {
                     // Clock for fullscreen
@@ -565,13 +565,13 @@
                     }
                 },
 
-                async connectEsp32() {
+                async connectBuzzer() {
                     if (!('serial' in navigator)) {
-                        this.esp32Status = 'Web Serial tidak tersedia. Gunakan Chrome/Edge di localhost atau HTTPS.';
+                        this.buzzerStatus = 'Web Serial tidak tersedia. Gunakan Chrome/Edge di localhost atau HTTPS.';
                         return;
                     }
 
-                    this.esp32Connecting = true;
+                    this.buzzerConnecting = true;
                     try {
                         this.serialPort = await navigator.serial.requestPort();
                         await this.serialPort.open({ baudRate: 115200 });
@@ -584,13 +584,13 @@
                             throw new Error('Port serial ESP32 tidak dapat dibaca untuk konfirmasi.');
                         }
                         this.serialReader = this.serialPort.readable.getReader();
-                        this.esp32Connected = true;
-                        this.esp32Status = 'Port terbuka. Tes output untuk memeriksa LED, LCD, dan buzzer.';
-                        this.readEsp32Responses(this.serialReader);
+                        this.buzzerConnected = true;
+                        this.buzzerStatus = 'Port terbuka. Tekan Tes Buzzer ESP32 untuk memeriksa bunyi.';
+                        this.readBuzzerResponses(this.serialReader);
                     } catch (error) {
-                        console.error('Koneksi output ESP32 gagal:', error);
-                        this.esp32Connected = false;
-                        this.esp32Status = `Koneksi ESP32 gagal: ${error.message || 'Periksa port dan kabel USB.'}`;
+                        console.error('Koneksi buzzer ESP32 gagal:', error);
+                        this.buzzerConnected = false;
+                        this.buzzerStatus = `Koneksi buzzer gagal: ${error.message || 'Periksa port dan kabel USB.'}`;
                         if (this.serialWriter) {
                             this.serialWriter.releaseLock();
                             this.serialWriter = null;
@@ -615,11 +615,11 @@
                     }
                 },
 
-                async readEsp32Responses(reader) {
+                async readBuzzerResponses(reader) {
                     const decoder = new TextDecoder();
                     let buffer = '';
                     try {
-                        while (this.esp32Connected) {
+                        while (this.buzzerConnected) {
                             const { value, done } = await reader.read();
                             if (done) break;
                             buffer += decoder.decode(value, { stream: true });
@@ -628,17 +628,17 @@
                             lines.forEach(line => {
                                 const response = line.trim();
                                 if (response === 'READY') {
-                                    this.esp32Status = 'ESP32 siap. Output LED/LCD/buzzer aktif.';
+                                    this.buzzerStatus = 'ESP32 siap. Tekan Tes Buzzer untuk menguji bunyi.';
                                 } else if (response.startsWith('ACK:')) {
-                                    this.esp32Status = `ESP32 menerima perintah ${response.slice(4)}.`;
+                                    this.buzzerStatus = `ESP32 menerima perintah ${response.slice(4)}.`;
                                 }
                             });
                         }
                     } catch (error) {
-                        if (this.esp32Connected) {
+                        if (this.buzzerConnected) {
                             console.error('Pembacaan status serial ESP32 gagal:', error);
-                            this.esp32Connected = false;
-                            this.esp32Status = 'Koneksi serial ESP32 terputus.';
+                            this.buzzerConnected = false;
+                            this.buzzerStatus = 'Koneksi serial ESP32 terputus.';
                         }
                     } finally {
                         reader.releaseLock();
@@ -646,19 +646,19 @@
                     }
                 },
 
-                async sendEsp32Command(command) {
+                async sendBuzzerCommand(command) {
                     if (!this.serialWriter) {
-                        this.esp32Status = 'ESP32 belum tersambung.';
+                        this.buzzerStatus = 'ESP32 belum tersambung.';
                         return;
                     }
 
                     try {
                         await this.serialWriter.write(new TextEncoder().encode(`${command}\n`));
-                        this.esp32Status = `Perintah ${command} dikirim; menunggu konfirmasi ESP32...`;
+                        this.buzzerStatus = `Perintah ${command} dikirim; menunggu konfirmasi ESP32...`;
                     } catch (error) {
-                        console.error('Pengiriman perintah ESP32 gagal:', error);
-                        this.esp32Connected = false;
-                        this.esp32Status = 'Koneksi ESP32 terputus. Sambungkan kembali perangkat.';
+                        console.error('Pengiriman perintah buzzer gagal:', error);
+                        this.buzzerConnected = false;
+                        this.buzzerStatus = 'Koneksi ESP32 terputus. Sambungkan kembali buzzer.';
                         this.serialWriter.releaseLock();
                         this.serialWriter = null;
                         if (this.serialPort) {
@@ -674,8 +674,8 @@
                     }
                 },
 
-                async testEsp32Output() {
-                    await this.sendEsp32Command('TEST');
+                async testBuzzer() {
+                    await this.sendBuzzerCommand('KNOWN');
                 },
 
                 stopCamera() {
@@ -751,15 +751,14 @@
                     const unknownFaceCodes = [
                         'IDENTITY_NOT_FOUND',
                         'LOW_MATCH_CONFIDENCE',
-                        'MEMBER_NOT_FOUND',
                         'UNREGISTERED',
                         'FACE_NOT_REGISTERED',
                     ];
                     const faceNotRegistered = data.decision === 'DENY'
                         && (unknownFaceCodes.includes(data.code) || data.title === 'Wajah Belum Terdaftar');
                     const checkinSucceeded = data.decision === 'ALLOW' && data.code === 'ACCESS_GRANTED';
-                    const outputCommand = checkinSucceeded ? 'SUCCESS' : (faceNotRegistered ? 'UNKNOWN' : 'FAIL');
-                    await this.sendEsp32Command(outputCommand);
+                    const buzzerCommand = checkinSucceeded ? 'KNOWN' : (faceNotRegistered ? 'UNKNOWN' : 'OFF');
+                    await this.sendBuzzerCommand(buzzerCommand);
 
                     // If ALLOW: prepend to table dynamically!
                     if (data.decision === 'ALLOW' && data.member) {

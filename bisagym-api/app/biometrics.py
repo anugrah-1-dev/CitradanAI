@@ -22,6 +22,7 @@ class RecognitionResult:
     match_score: float | None = None
     errors: list[str] = field(default_factory=list)
     confidence_cap: float | None = None
+    blur_measure: float | None = None
 
 
 @dataclass
@@ -229,7 +230,10 @@ class OpenCvSFaceEngine:
         return self._analyze(image_bytes)
 
     def analyze_enrollment_sample(self, image_bytes: bytes) -> RecognitionResult:
-        return self._analyze(image_bytes)
+        return self._analyze(
+            image_bytes,
+            blur_threshold=self.settings.face_enrollment_blur_threshold,
+        )
 
     def analyze_frame(self, image_bytes: bytes) -> FrameAnalysisResult:
         if not image_bytes or len(image_bytes) > self.settings.max_sample_bytes:
@@ -264,7 +268,7 @@ class OpenCvSFaceEngine:
                 return FrameAnalysisResult(width, height, errors=["TOO_MANY_FACES"])
 
             for face in faces:
-                quality, errors = self._quality(image, face)
+                quality, errors, _ = self._quality(image, face)
                 embedding = None
                 if not errors:
                     try:
@@ -295,7 +299,9 @@ class OpenCvSFaceEngine:
                 )
         return FrameAnalysisResult(width, height, faces=results)
 
-    def _analyze(self, image_bytes: bytes) -> RecognitionResult:
+    def _analyze(
+        self, image_bytes: bytes, *, blur_threshold: float | None = None
+    ) -> RecognitionResult:
         if not image_bytes:
             return RecognitionResult(0, None, None, errors=["INVALID_IMAGE"])
         if len(image_bytes) > self.settings.max_sample_bytes:
@@ -328,35 +334,52 @@ class OpenCvSFaceEngine:
             if count != 1:
                 return RecognitionResult(count, None, None, errors=["MULTIPLE_FACES"])
             face = faces[0]
-            quality, errors = self._quality(image, face)
+            quality, errors, blur_measure = self._quality(
+                image, face, blur_threshold=blur_threshold
+            )
             if errors:
-                return RecognitionResult(1, quality, None, errors=errors)
+                return RecognitionResult(
+                    1, quality, None, errors=errors, blur_measure=blur_measure
+                )
             try:
                 aligned = self.recognizer.alignCrop(image, face)
                 feature = self.recognizer.feature(aligned).reshape(-1).astype(self.np.float32)
             except self.cv2.error:
-                return RecognitionResult(1, quality, None, errors=["INVALID_IMAGE"])
+                return RecognitionResult(
+                    1, quality, None, errors=["INVALID_IMAGE"], blur_measure=blur_measure
+                )
 
         if feature.size != self.dimension or not self.np.isfinite(feature).all():
-            return RecognitionResult(1, quality, None, errors=["EMBEDDING_EXTRACTION_FAILED"])
+            return RecognitionResult(
+                1, quality, None, errors=["EMBEDDING_EXTRACTION_FAILED"],
+                blur_measure=blur_measure,
+            )
         norm = float(self.np.linalg.norm(feature))
         if norm <= 0:
-            return RecognitionResult(1, quality, None, errors=["EMBEDDING_EXTRACTION_FAILED"])
+            return RecognitionResult(
+                1, quality, None, errors=["EMBEDDING_EXTRACTION_FAILED"],
+                blur_measure=blur_measure,
+            )
         embedding = (feature / norm).astype(float).tolist()
-        return RecognitionResult(1, quality, None, embedding=embedding)
+        return RecognitionResult(
+            1, quality, None, embedding=embedding, blur_measure=blur_measure
+        )
 
-    def _quality(self, image: Any, face: Any) -> tuple[float, list[str]]:
+    def _quality(
+        self, image: Any, face: Any, *, blur_threshold: float | None = None
+    ) -> tuple[float, list[str], float | None]:
         height, width = image.shape[:2]
         x, y, box_width, box_height = (float(value) for value in face[:4])
         x1, y1 = max(0, int(x)), max(0, int(y))
         x2, y2 = min(width, int(x + box_width)), min(height, int(y + box_height))
         if x2 <= x1 or y2 <= y1:
-            return 0.0, ["INVALID_IMAGE"]
+            return 0.0, ["INVALID_IMAGE"], None
         crop = image[y1:y2, x1:x2]
         gray = self.cv2.cvtColor(crop, self.cv2.COLOR_BGR2GRAY)
         minimum_side = min(box_width, box_height)
         size_ratio = minimum_side / max(1, min(width, height))
         blur = float(self.cv2.Laplacian(gray, self.cv2.CV_64F).var())
+        selected_blur_threshold = blur_threshold or self.settings.face_blur_threshold
         exposure = float(gray.mean())
         clipped = float(((gray <= 5) | (gray >= 250)).mean())
         errors: list[str] = []
@@ -365,7 +388,7 @@ class OpenCvSFaceEngine:
             or size_ratio < self.settings.face_min_size_ratio
         ):
             errors.append("FACE_TOO_SMALL")
-        if blur < self.settings.face_blur_threshold:
+        if blur < selected_blur_threshold:
             errors.append("IMAGE_TOO_BLURRY")
         if (
             exposure < self.settings.face_min_exposure
@@ -379,7 +402,10 @@ class OpenCvSFaceEngine:
             size_ratio / self.settings.face_min_size_ratio,
         )
         size_score = min(1.0, 0.7 + 0.3 * max(0.0, size_base - 1.0))
-        blur_score = min(1.0, 0.7 + 0.3 * max(0.0, blur / self.settings.face_blur_threshold - 1.0))
+        blur_score = min(
+            1.0,
+            0.7 + 0.3 * max(0.0, blur / selected_blur_threshold - 1.0),
+        )
         exposure_middle = (self.settings.face_min_exposure + self.settings.face_max_exposure) / 2
         exposure_half_range = (
             self.settings.face_max_exposure - self.settings.face_min_exposure
@@ -389,7 +415,7 @@ class OpenCvSFaceEngine:
         )
         detector_score = float(face[-1])
         quality = max(0.0, min(1.0, detector_score, size_score, blur_score, exposure_score))
-        return quality, errors
+        return quality, errors, blur
 
     @staticmethod
     def _bounding_box(image: Any, face: Any) -> tuple[int, int, int, int]:

@@ -100,6 +100,7 @@
                 <div id="face-enrollment-workflow"
                     data-member-id="{{ $selectedMember->id }}"
                     data-start-url="{{ route('face-enrollment.start', $selectedMember) }}"
+                    data-preview-url="{{ route('face-enrollment.preview', $selectedMember) }}"
                     data-sample-url="{{ route('face-enrollment.sample', $selectedMember) }}"
                     data-complete-url="{{ route('face-enrollment.complete', $selectedMember) }}"
                     data-revoke-url="{{ route('face-enrollment.revoke', $selectedMember) }}"
@@ -271,7 +272,10 @@
         if (['FACE_TOO_SMALL'].includes(code)) {
             return 'Wajah terlalu jauh dari kamera. Silakan mendekat hingga wajah memenuhi bingkai panduan.';
         }
-        if (['LOW_QUALITY', 'LOW_IMAGE_QUALITY', 'IMAGE_QUALITY_TOO_LOW', 'QUALITY_TOO_LOW', 'IMAGE_TOO_BLURRY'].includes(code)) {
+        if (['LOW_QUALITY', 'LOW_IMAGE_QUALITY', 'IMAGE_QUALITY_TOO_LOW', 'QUALITY_TOO_LOW'].includes(code)) {
+            return 'Belum ada frame dengan kualitas cukup. Tahan posisi sebentar dan pastikan wajah terlihat jelas.';
+        }
+        if (['IMAGE_TOO_BLURRY'].includes(code)) {
             return 'Kualitas foto belum memenuhi standar (kurang fokus atau buram). Jaga kepala dan kamera tetap stabil.';
         }
         if (['BAD_EXPOSURE'].includes(code)) {
@@ -307,8 +311,8 @@
         return result;
     }
 
-    async function postImage(pose, image) {
-        const url = new URL(root.dataset.sampleUrl, window.location.origin);
+    async function postEnrollmentImage(endpoint, pose, image) {
+        const url = new URL(endpoint, window.location.origin);
         url.searchParams.set('session_id', sessionId);
         url.searchParams.set('pose_type', pose);
         const response = await fetch(url, {
@@ -323,6 +327,14 @@
             throw err;
         }
         return result;
+    }
+
+    async function postImage(pose, image) {
+        return postEnrollmentImage(root.dataset.sampleUrl, pose, image);
+    }
+
+    async function previewImage(pose, image) {
+        return postEnrollmentImage(root.dataset.previewUrl, pose, image);
     }
 
     function renderProgress() {
@@ -355,11 +367,25 @@
         }
         try {
             stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } },
+                video: {
+                    facingMode: 'user',
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    advanced: [{ focusMode: 'continuous' }],
+                },
                 audio: false,
             });
             video.srcObject = stream;
             await video.play();
+            const track = stream.getVideoTracks()[0];
+            const focusModes = track?.getCapabilities?.().focusMode;
+            if (focusModes?.includes('continuous')) {
+                try {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                } catch (error) {
+                    console.warn('Kamera menolak fokus otomatis kontinu.', error);
+                }
+            }
             await new Promise((resolve, reject) => {
                 if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return resolve();
                 const timer = window.setTimeout(() => reject(new Error('Kamera belum menghasilkan gambar.')), 8000);
@@ -445,10 +471,50 @@
                 return;
             }
 
-            // Brief wait for camera auto-focus to settle
-            await new Promise(r => setTimeout(r, 200));
+            const candidates = [];
+            const candidateCount = 8;
+            for (let index = 0; index < candidateCount; index += 1) {
+                showAlert(`Menunggu fokus kamera dan mengambil frame (${index + 1}/${candidateCount})...`, true);
+                if (index > 0) await new Promise(resolve => setTimeout(resolve, 500));
+                candidates.push(await captureImage());
+            }
 
-            const result = await postImage(pose, await captureImage());
+            let bestCandidate = null;
+            let bestQuality = -1;
+            const rejectedReasons = new Map();
+            for (let index = 0; index < candidates.length; index += 1) {
+                showAlert(`Memeriksa kualitas foto (${index + 1}/${candidates.length})...`, true);
+                const preview = await previewImage(pose, candidates[index]);
+                if (preview.accepted && (preview.quality_score ?? 0) > bestQuality) {
+                    bestCandidate = candidates[index];
+                    bestQuality = preview.quality_score ?? 0;
+                } else if (preview.reason_code) {
+                    rejectedReasons.set(
+                        preview.reason_code,
+                        {
+                            count: (rejectedReasons.get(preview.reason_code)?.count || 0) + 1,
+                            blurMeasure: preview.blur_measure,
+                            blurThreshold: preview.blur_threshold,
+                        },
+                    );
+                }
+            }
+
+            if (!bestCandidate) {
+                const bestReason = [...rejectedReasons.entries()]
+                    .sort((left, right) => right[1].count - left[1].count)[0];
+                const [reasonCode, details] = bestReason || [];
+                const reasonMessage = reasonCode === 'IMAGE_TOO_BLURRY'
+                    && Number.isFinite(details?.blurMeasure)
+                    && Number.isFinite(details?.blurThreshold)
+                    ? `Ketajaman kamera ${details.blurMeasure.toFixed(1)}; minimum ${details.blurThreshold}. Bersihkan lensa atau gunakan kamera dengan fokus lebih baik.`
+                    : reasonCode ? faceErrorMessage({ code: reasonCode }) : null;
+                showAlert(reasonMessage
+                    || 'Tidak ada frame wajah yang dapat digunakan. Posisikan wajah di dalam bingkai lalu coba lagi.');
+                return;
+            }
+
+            const result = await postImage(pose, bestCandidate);
             acceptedPoses.push(pose);
             if (poseIndex < requiredPoses.length - 1) {
                 poseIndex += 1;
